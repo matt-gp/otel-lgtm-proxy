@@ -1,0 +1,135 @@
+services:
+  # Loki for Logs
+  loki:
+    image: grafana/loki:3.0.0
+    ports:
+      - "3100:3100"
+    command: -config.file=/etc/loki/local-config.yaml
+    volumes:
+      - ./test/loki-config.yaml:/etc/loki/local-config.yaml
+      - /loki
+    healthcheck:
+      test: ["CMD", "/usr/bin/wget", "--spider", "http://localhost:3100/ready"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # Mimir for Metrics
+  mimir:
+    image: grafana/mimir:2.10.0
+    ports:
+      - "8080:8080"  
+    command: 
+      - -config.file=/etc/mimir.yaml
+      - -target=all
+    volumes:
+      - ./test/mimir-config.yaml:/etc/mimir.yaml
+      - /data
+    healthcheck:
+      test: ["CMD", "/usr/bin/wget", "--spider", "http://localhost:8080/ready"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+
+  # Tempo for Traces
+  tempo:
+    image: grafana/tempo:2.2.0
+    ports:
+      - "3200:3200"
+      - "3201:3201"  # OTLP HTTP receiver
+    command: 
+      - -config.file=/etc/tempo.yaml
+    volumes:
+      - ./test/tempo-config.yaml:/etc/tempo.yaml
+      - /tmp/tempo
+    healthcheck:
+      test: ["CMD", "/usr/bin/wget", "--spider", "http://localhost:3200/ready"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+
+  # Grafana for Visualization
+  grafana:
+    image: grafana/grafana:10.0.0
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+      - ./test/grafana-datasources.yaml:/etc/grafana/provisioning/datasources/datasources.yaml
+      - /var/lib/grafana
+    depends_on:
+      loki:
+        condition: service_healthy
+      mimir:
+        condition: service_healthy
+      tempo:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "/usr/bin/wget", "--spider", "http://localhost:3000/api/health"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+
+  # Your otel-lgtm-proxy
+  otel-proxy:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8443:8443"  # Main HTTP server for all OTLP endpoints
+    environment:
+      - LOG_LEVEL=DEBUG
+      - HTTP_LISTEN_ADDRESS=:8443
+      - OLP_LOGS_ADDRESS=http://loki:3100/otlp/v1/logs
+      - OLP_METRICS_ADDRESS=http://mimir:8080/otlp/v1/metrics
+      - OLP_TRACES_ADDRESS=http://tempo:3201/v1/traces
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
+      - OTEL_EXPORTER_OTLP_INSECURE=true
+      - OTEL_METRICS_EXPORTER=otlp
+      - OTEL_TRACES_EXPORTER=otlp
+      - OTEL_LOGS_EXPORTER=otlp
+      # Note: No tenant.id set here to test default tenant logic
+    depends_on:
+      loki:
+        condition: service_healthy
+      mimir:
+        condition: service_healthy
+      tempo:
+        condition: service_healthy
+      otel-collector:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "/usr/bin/wget", "--spider", "http://localhost:8443/health"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+
+  # OpenTelemetry Collector - receives OTLP and forwards to our proxy
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.88.0
+    ports:
+      - "4317:4317"  # OTLP gRPC receiver
+      - "4318:4318"  # OTLP HTTP receiver
+      - "13133:13133"  # Health check endpoint
+    volumes:
+      - ./test/otel-collector-config.yaml:/etc/otelcol-contrib/otel-collector-config.yaml
+    command: ["--config=/etc/otelcol-contrib/otel-collector-config.yaml"]
+
+  # Test Client using bash scripts - sends all telemetry types
+  test-client:
+    build:
+      context: .
+      dockerfile: test/Dockerfile
+    environment:
+      - OTEL_COLLECTOR_ENDPOINT=http://otel-collector:4318
+      - TENANTS=tenant-a,tenant-b
+      - SERVICES=web-app,api-service,database,cache,auth-service
+      - INTERVAL=1
+    command: ["./send-telemetry.sh", "all"]
+    restart: "no"  # Prevent automatic restart
+    depends_on:
+      otel-collector:
+        condition: service_started
+      otel-proxy:
+        condition: service_healthy

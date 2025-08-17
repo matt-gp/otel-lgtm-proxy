@@ -30,3 +30,12 @@ go.work.sum
 # Editor/IDE
 # .idea/
 # .vscode/
+
+# auto generated mock files for tests 
+*_mock.go
+
+# binaries
+otel-lgtm-proxy
+otel-test-client
+bin/*
+main

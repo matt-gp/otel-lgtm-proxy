@@ -1,0 +1,55 @@
+server:
+  http_listen_port: 3200
+  log_level: info
+
+distributor:
+  receivers:
+    otlp:
+      protocols:
+        http:
+          endpoint: 0.0.0.0:3201
+  # High throughput distributor settings
+  ring:
+    kvstore:
+      store: inmemory
+  log_received_spans:
+    enabled: false  # Disable for performance
+
+ingester:
+  # Optimize for high throughput
+  max_block_duration: 5m
+  max_block_bytes: 100000000          # 100MB blocks
+  complete_block_timeout: 30s
+
+compactor:
+  compaction:
+    block_retention: 1h
+
+storage:
+  trace:
+    backend: local
+    local:
+      path: /tmp/tempo/traces
+
+query_frontend:
+  search:
+    duration_slo: 5s
+    throughput_bytes_slo: 1.073741824e+09
+  trace_by_id:
+    duration_slo: 5s
+
+metrics_generator:
+  registry:
+    external_labels:
+      source: tempo
+      cluster: docker
+  storage:
+    path: /tmp/tempo/generator/wal
+    remote_write:
+      - url: http://mimir:8080/api/v1/push
+        send_exemplars: true
+
+multitenancy_enabled: true
+
+# Note: Tempo 2.2.0 has limited override configuration support
+# Using global configuration for high throughput

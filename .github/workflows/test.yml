@@ -1,0 +1,90 @@
+---
+name: test
+
+on:
+  pull_request:
+    branches:
+    - main
+  push:
+    branches:
+    - main
+
+
+jobs:  
+  test:
+    runs-on: [ubuntu-latest]
+    steps:
+      - uses: actions/checkout@v5
+  
+      - uses: actions/setup-go@v5
+        with:
+          go-version: 1.24.1
+
+      - name: install dependencies
+        run: go mod download
+
+      - name: install mockgen
+        run: go install go.uber.org/mock/mockgen@latest
+
+      - name: generate mocks
+        run: go generate ./...
+
+      - name: lint
+        uses: golangci/golangci-lint-action@v8
+        with:
+          version: latest
+          args: -v
+
+      - name: test with coverage
+        id: coverage
+        run: |
+          coverage_file="coverage-${{ github.run_id }}.out"
+          go test -v -race -coverprofile="$coverage_file" -covermode=atomic ./...
+          go tool cover -func="$coverage_file"
+          echo "coverage_file=$coverage_file" >> $GITHUB_OUTPUT
+
+      - name: display coverage summary
+        run: |
+          echo "## Test Coverage Summary" >> $GITHUB_STEP_SUMMARY
+          echo "| Package.Function | Coverage |" >> $GITHUB_STEP_SUMMARY
+          echo "|------------------|----------|" >> $GITHUB_STEP_SUMMARY
+          go tool cover -func="${{ steps.coverage.outputs.coverage_file }}" | grep -v "total:" | grep -v "_mock.go" | while read line; do
+            # Extract filename, function name, and coverage percentage
+            filename=$(echo "$line" | awk '{print $1}')
+            full_func=$(echo "$line" | awk '{print $2}')
+            coverage=$(echo "$line" | awk '{print $3}')
+            
+            # Extract package name from filename (e.g., internal/config/config.go -> config)
+            package_name=$(echo "$filename" | sed 's/.*\///' | sed 's/\.go$//' | sed 's/_test$//')
+            
+            # If there's no function name (just filename), use the package name
+            if [[ "$full_func" == "" ]]; then
+              func_display="$package_name"
+            else
+              # Combine package and function name
+              func_display="$package_name.$full_func"
+            fi
+            
+            echo "| \`$func_display\` | $coverage |" >> $GITHUB_STEP_SUMMARY
+          done
+          
+          total_coverage=$(go tool cover -func="${{ steps.coverage.outputs.coverage_file }}" | grep "total:" | awk '{print $3}')
+          echo "| **Total** | **$total_coverage** |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Overall Coverage: $total_coverage**" >> $GITHUB_STEP_SUMMARY
+
+      - name: upload coverage to codecov
+        uses: codecov/codecov-action@v4
+        with:
+          file: ./${{ steps.coverage.outputs.coverage_file }}
+          flags: unittests
+          name: codecov-umbrella
+          fail_ci_if_error: false
+
+      - name: upload coverage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report-${{ github.run_id }}
+          path: ${{ steps.coverage.outputs.coverage_file }}
+          retention-days: ${{ github.ref == 'refs/heads/main' && 90 || 30 }}
+        
