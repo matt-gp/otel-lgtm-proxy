@@ -1,0 +1,229 @@
+apiVersion: 1
+
+datasources:
+  # Default Tenant Datasources
+  - name: Loki (Default)
+    type: loki
+    access: proxy
+    url: http://loki:3100
+    uid: loki-default
+    isDefault: false
+    editable: true
+    jsonData:
+      timeout: 60
+      maxLines: 1000
+      httpHeaderName1: 'X-Scope-OrgID'
+    secureJsonData:
+      httpHeaderValue1: 'default'
+
+  - name: Mimir (Default)
+    type: prometheus
+    access: proxy
+    url: http://mimir:8080/prometheus
+    uid: mimir-default
+    isDefault: true
+    editable: true
+    jsonData:
+      timeout: 60
+      prometheusType: Mimir
+      prometheusVersion: 2.40.0
+      httpHeaderName1: 'X-Scope-OrgID'
+    secureJsonData:
+      httpHeaderValue1: 'default'
+
+  - name: Tempo (Default)
+    type: tempo
+    access: proxy
+    url: http://tempo:3200
+    uid: tempo-default
+    isDefault: false
+    editable: true
+    jsonData:
+      timeout: 60
+      httpHeaderName1: 'X-Scope-OrgID'
+      tracesToLogs:
+        datasourceUid: loki-default
+        tags: 
+          - 'service.name'
+          - 'trace.id'
+          - 'span.id'
+        mappedTags:
+          - key: 'service.name'
+            value: 'service_name'
+          - key: 'trace.id'
+            value: 'trace_id'
+          - key: 'span.id'
+            value: 'span_id'
+        mapTagNamesEnabled: true
+        spanStartTimeShift: '-5m'
+        spanEndTimeShift: '5m'
+        filterByTraceID: true
+        filterBySpanID: true
+        customQuery: true
+        query: '{service_name="${__tags}"} |= "${__trace.traceId}" |= "${__span.spanId}"'
+      tracesToMetrics:
+        datasourceUid: mimir-default
+        tags: [{ key: 'service.name', value: 'job' }]
+        # queries:
+        #   - name: 'Sample query'
+        #     query: 'sum(rate(traces_spanmetrics_latency_bucket[$__interval])) by (service)'
+      serviceMap:
+        datasourceUid: mimir-default
+      search:
+        hide: false
+      nodeGraph:
+        enabled: true
+    secureJsonData:
+      httpHeaderValue1: 'default'
+
+  # Tenant A Datasources
+  - name: Loki (Tenant A)
+    type: loki
+    access: proxy
+    url: http://loki:3100
+    uid: loki-tenant-a
+    isDefault: false
+    editable: true
+    jsonData:
+      timeout: 60
+      maxLines: 1000
+      httpHeaderName1: 'X-Scope-OrgID'
+    secureJsonData:
+      httpHeaderValue1: 'tenant-a'
+
+  - name: Mimir (Tenant A)
+    type: prometheus
+    access: proxy
+    url: http://mimir:8080/prometheus
+    uid: mimir-tenant-a
+    isDefault: false
+    editable: true
+    jsonData:
+      timeout: 60
+      prometheusType: Mimir
+      prometheusVersion: 2.40.0
+      httpHeaderName1: 'X-Scope-OrgID'
+    secureJsonData:
+      httpHeaderValue1: 'tenant-a'
+
+  - name: Tempo (Tenant A)
+    type: tempo
+    access: proxy
+    url: http://tempo:3200
+    uid: tempo-tenant-a
+    isDefault: false
+    editable: true
+    jsonData:
+      timeout: 60
+      httpHeaderName1: 'X-Scope-OrgID'
+      tracesToLogs:
+        datasourceUid: loki-tenant-a
+        tags: 
+          - 'service.name'
+          - 'trace.id'
+          - 'span.id'
+        mappedTags:
+          - key: 'service.name'
+            value: 'service_name'
+          - key: 'trace.id'
+            value: 'trace_id'
+          - key: 'span.id'
+            value: 'span_id'
+        mapTagNamesEnabled: true
+        spanStartTimeShift: '-5m'
+        spanEndTimeShift: '5m'
+        filterByTraceID: true
+        filterBySpanID: true
+        customQuery: true
+        query: '{service_name="${__tags}"} |= "${__trace.traceId}" |= "${__span.spanId}"'
+      tracesToMetrics:
+        datasourceUid: mimir-tenant-a
+        tags: [{ key: 'service.name', value: 'service' }, { key: 'job' }]
+        # queries:
+        #   - name: 'Sample query'
+        #     query: 'sum(rate(traces_spanmetrics_latency_bucket[$__interval])) by (service)'
+      serviceMap:
+        datasourceUid: mimir-tenant-a
+      search:
+        hide: false
+      nodeGraph:
+        enabled: true
+    secureJsonData:
+      httpHeaderValue1: 'tenant-a'
+
+  # Tenant B Datasources
+  - name: Loki (Tenant B)
+    type: loki
+    access: proxy
+    url: http://loki:3100
+    uid: loki-tenant-b
+    isDefault: false
+    editable: true
+    jsonData:
+      timeout: 60
+      maxLines: 1000
+      httpHeaderName1: 'X-Scope-OrgID'
+    secureJsonData:
+      httpHeaderValue1: 'tenant-b'
+
+  - name: Mimir (Tenant B)
+    type: prometheus
+    access: proxy
+    url: http://mimir:8080/prometheus
+    uid: mimir-tenant-b
+    isDefault: false
+    editable: true
+    jsonData:
+      timeout: 60
+      prometheusType: Mimir
+      prometheusVersion: 2.40.0
+      httpHeaderName1: 'X-Scope-OrgID'
+    secureJsonData:
+      httpHeaderValue1: 'tenant-b'
+
+  - name: Tempo (Tenant B)
+    type: tempo
+    access: proxy
+    url: http://tempo:3200
+    uid: tempo-tenant-b
+    isDefault: false
+    editable: true
+    jsonData:
+      timeout: 60
+      httpHeaderName1: 'X-Scope-OrgID'
+      tracesToLogs:
+        datasourceUid: loki-tenant-b
+        tags: 
+          - 'service.name'
+          - 'trace.id'
+          - 'span.id'
+        mappedTags:
+          - key: 'service.name'
+            value: 'service_name'
+          - key: 'trace.id'
+            value: 'trace_id'
+          - key: 'span.id'
+            value: 'span_id'
+        mapTagNamesEnabled: true
+        spanStartTimeShift: '-5m'
+        spanEndTimeShift: '5m'
+        filterByTraceID: true
+        filterBySpanID: true
+        customQuery: true
+        query: '{service_name="${__tags}"} |= "${__trace.traceId}" |= "${__span.spanId}"'
+      tracesToMetrics:
+        datasourceUid: mimir-tenant-b
+        tags: 
+        - key: 'service.name'
+          value: 'service_name'
+        # queries:
+        #   - name: 'Target Info'
+        #     query: 'sum(rate(traces_spanmetrics_latency_bucket[$__interval])) by (service)'
+      serviceMap:
+        datasourceUid: mimir-tenant-b
+      search:
+        hide: false
+      nodeGraph:
+        enabled: true
+    secureJsonData:
+      httpHeaderValue1: 'tenant-b'

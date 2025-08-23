@@ -1,0 +1,325 @@
+// Package traces provides functionality for processing trace data.
+package traces
+
+import (
+	"bytes"
+	"context"
+	"fmt"
+	"io"
+	"net/http"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/matt-gp/otel-lgtm-proxy/internal/certutil"
+	"github.com/matt-gp/otel-lgtm-proxy/internal/config"
+	"github.com/matt-gp/otel-lgtm-proxy/internal/logger"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/log"
+	"go.opentelemetry.io/otel/metric"
+	"go.opentelemetry.io/otel/trace"
+	v1 "go.opentelemetry.io/proto/otlp/common/v1"
+	tracepb "go.opentelemetry.io/proto/otlp/trace/v1"
+	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
+)
+
+type Traces struct {
+	config                    *config.Config
+	client                    Client
+	logger                    log.Logger
+	meter                     metric.Meter
+	tracer                    trace.Tracer
+	otelForwarderCounter      metric.Int64Counter
+	otelForwarderLatency      metric.Int64Histogram
+	otelForwarderResponseCode metric.Int64Counter
+}
+
+//go:generate mockgen -package traces -source traces.go -destination traces_mock.go
+type Client interface {
+	Do(req *http.Request) (*http.Response, error)
+}
+
+// New creates a new Traces instance.
+func New(config *config.Config, client Client, logger log.Logger, meter metric.Meter, tracer trace.Tracer) (*Traces, error) {
+
+	otelForwarderCounter, err := meter.Int64Counter(
+		"otel_forwarder_requests_total",
+		metric.WithDescription("Total number of otel forwarder requests"),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create otel forwarder counter: %w", err)
+	}
+
+	otelForwarderLatency, err := meter.Int64Histogram(
+		"otel_forwarder_request_duration_seconds",
+		metric.WithDescription("Latency of otel forwarder requests"),
+		metric.WithUnit("ms"),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create otel forwarder latency histogram: %w", err)
+	}
+
+	otelForwarderResponseCode, err := meter.Int64Counter(
+		"otel_forwarder_response_code_total",
+		metric.WithDescription("Status code of otel forwarder responses"),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create otel_forwarder_response_code_total counter: %w", err)
+	}
+
+	if certutil.TLSEnabled(&config.Traces.TLS) {
+
+		tlsConfig, err := certutil.CreateTLSConfig(&config.Traces)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create tracer TLS config: %w", err)
+		}
+
+		client.(*http.Client).Transport = &http.Transport{
+			TLSClientConfig: tlsConfig,
+		}
+	}
+
+	return &Traces{
+		config:                    config,
+		client:                    client,
+		logger:                    logger,
+		meter:                     meter,
+		tracer:                    tracer,
+		otelForwarderCounter:      otelForwarderCounter,
+		otelForwarderLatency:      otelForwarderLatency,
+		otelForwarderResponseCode: otelForwarderResponseCode,
+	}, nil
+}
+
+// Handler handles incoming trace requests.
+func (t *Traces) Handler(w http.ResponseWriter, r *http.Request) {
+
+	ctx, span := t.tracer.Start(r.Context(), "handler")
+	span.SetAttributes(attribute.String("signal.type", "traces"))
+	defer span.End()
+
+	traces, err := unmarshal(r)
+	if err != nil {
+		logger.Error(ctx, t.logger, err.Error())
+		http.Error(w, "failed to unmarshal traces", http.StatusBadRequest)
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "failed to unmarshal traces")
+		return
+	}
+
+	if err := t.dispatch(ctx, t.partition(ctx, traces)); err != nil {
+		logger.Error(ctx, t.logger, err.Error())
+		http.Error(w, "failed to dispatch traces", http.StatusInternalServerError)
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "failed to dispatch traces")
+		return
+	}
+
+	span.SetStatus(codes.Ok, "traces processed successfully")
+	w.WriteHeader(http.StatusAccepted)
+}
+
+// addHeaders adds the headers to the request.
+func (t *Traces) addHeaders(tenant string, req *http.Request) {
+	req.Header.Set("Content-Type", "application/x-protobuf")
+	req.Header.Add(t.config.Tenant.Header, fmt.Sprintf(t.config.Tenant.Format, tenant))
+
+	// Add custom headers
+	customHeaders := strings.Split(t.config.Logs.Headers, ",")
+	for _, customHeader := range customHeaders {
+		kv := strings.SplitN(customHeader, "=", 2)
+		if len(kv) == 2 {
+			req.Header.Add(kv[0], kv[1])
+		}
+	}
+}
+
+// partition partitions the request by tenant.
+func (t *Traces) partition(ctx context.Context, req *tracepb.TracesData) map[string]*tracepb.TracesData {
+
+	ctx, span := t.tracer.Start(ctx, "partition")
+	span.SetAttributes(attribute.String("signal.type", "traces"))
+	defer span.End()
+
+	tenantMap := make(map[string]*tracepb.TracesData)
+
+	var tenant string
+	for _, resouceSpan := range req.ResourceSpans {
+		logger.Trace(ctx, t.logger, fmt.Sprintf("%+v", resouceSpan.Resource.Attributes))
+		for _, attr := range resouceSpan.Resource.Attributes {
+			if attr.Key == t.config.Tenant.Label {
+				tenant = attr.Value.GetStringValue()
+				break
+			}
+		}
+
+		if tenant == "" {
+			if t.config.Tenant.Default == "" {
+				logger.Warn(ctx, t.logger, "no tenant found in span attributes and no default tenant configured")
+				continue
+			}
+
+			tenant = t.config.Tenant.Default
+			resouceSpan.Resource.Attributes = append(resouceSpan.Resource.Attributes, &v1.KeyValue{
+				Key:   t.config.Tenant.Label,
+				Value: &v1.AnyValue{Value: &v1.AnyValue_StringValue{StringValue: tenant}},
+			})
+		}
+
+		if _, ok := tenantMap[tenant]; !ok {
+			tenantMap[tenant] = &tracepb.TracesData{}
+		}
+
+		tenantMap[tenant].ResourceSpans = append(tenantMap[tenant].ResourceSpans, resouceSpan)
+	}
+
+	span.SetStatus(codes.Ok, "data partitioned")
+
+	return tenantMap
+}
+
+// dispatch sends all the request to the target.
+func (t *Traces) dispatch(ctx context.Context, tenantMap map[string]*tracepb.TracesData) error {
+
+	ctx, span := t.tracer.Start(ctx, "dispatch")
+	defer span.End()
+
+	var wg sync.WaitGroup
+
+	for tenant, traces := range tenantMap {
+		wg.Add(1)
+		go func(tenant string, traces *tracepb.TracesData) {
+			defer wg.Done()
+
+			signalAttributes := []attribute.KeyValue{
+				attribute.String("signal.tenant", tenant),
+				attribute.String("signal.type", "traces"),
+			}
+
+			resp, err := t.send(ctx, tenant, traces)
+			if err != nil {
+
+				t.otelForwarderCounter.Add(ctx, int64(len(traces.ResourceSpans)), metric.WithAttributes(
+					append(signalAttributes, attribute.String("signal.status", "failed"))...,
+				))
+
+				logger.Error(ctx, t.logger, err.Error())
+				span.RecordError(err)
+				span.SetStatus(codes.Error, "failed to send traces")
+
+				return
+			}
+
+			t.otelForwarderResponseCode.Add(ctx, 1, metric.WithAttributes(
+				append(signalAttributes,
+					attribute.String("signal.status", "success"),
+					attribute.String("signal.response",
+						fmt.Sprintf("%d", resp.StatusCode),
+					))...,
+			))
+
+			t.otelForwarderCounter.Add(ctx, int64(len(traces.ResourceSpans)), metric.WithAttributes(
+				append(signalAttributes, attribute.String("signal.status", "success"))...,
+			))
+
+			logger.Debug(ctx, t.logger, fmt.Sprintf("sent %d spans status %d for tenant %s", len(traces.ResourceSpans), resp.StatusCode, tenant))
+			logger.Trace(ctx, t.logger, fmt.Sprintf("%+v", traces.ResourceSpans))
+
+			span.SetStatus(codes.Ok, "traces sent successfully")
+
+		}(tenant, traces)
+	}
+
+	wg.Wait()
+	return nil
+}
+
+// send sends an individual request to the target.
+func (t *Traces) send(ctx context.Context, tenant string, traces *tracepb.TracesData) (http.Response, error) {
+
+	start := time.Now()
+	ctx, span := t.tracer.Start(ctx, "send")
+	defer span.End()
+
+	span.SetAttributes([]attribute.KeyValue{
+		attribute.String("signal.type", "traces"),
+		attribute.String("signal.tenant", tenant),
+		attribute.Int("signal.tenant.records", len(traces.ResourceSpans)),
+	}...)
+
+	body, err := marshal(traces)
+	if err != nil {
+		return http.Response{}, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, t.config.Traces.Address, io.NopCloser(bytes.NewReader(body)))
+	if err != nil {
+		return http.Response{}, err
+	}
+
+	t.addHeaders(tenant, req)
+
+	resp, err := t.client.Do(req)
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "failed to send traces")
+		return http.Response{}, err
+	}
+
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			fmt.Printf("Failed to close response body: %v\n", err)
+		}
+	}()
+
+	respAttributes := []attribute.KeyValue{
+		attribute.Int64("signal.response.size", resp.ContentLength),
+		attribute.String("signal.response.status", resp.Status),
+	}
+
+	span.SetAttributes(respAttributes...)
+	span.SetStatus(codes.Ok, "traces sent successfully")
+
+	t.otelForwarderLatency.Record(ctx, time.Since(start).Milliseconds(), metric.WithAttributes(
+		respAttributes...,
+	))
+
+	return *resp, nil
+}
+
+// marshal marshals the request using protobuf binary format.
+func marshal(traces *tracepb.TracesData) ([]byte, error) {
+	return proto.Marshal(traces)
+}
+
+// unmarshal unmarshals the request.
+func unmarshal(req *http.Request) (*tracepb.TracesData, error) {
+
+	var traces tracepb.TracesData
+
+	body, err := io.ReadAll(req.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	contentType := req.Header.Get("Content-Type")
+
+	// Try protojson first for JSON-like content
+	if contentType == "application/json" || contentType == "" {
+		if err := protojson.Unmarshal(body, &traces); err != nil {
+			// If protojson fails, try binary protobuf
+			if protoErr := proto.Unmarshal(body, &traces); protoErr != nil {
+				return nil, err // return the original protojson error
+			}
+		}
+	} else {
+		// For protobuf content types, use binary protobuf directly
+		if err := proto.Unmarshal(body, &traces); err != nil {
+			return nil, err
+		}
+	}
+
+	return &traces, nil
+}
