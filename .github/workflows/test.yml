@@ -74,7 +74,7 @@ jobs:
           echo "**Overall Coverage: $total_coverage**" >> $GITHUB_STEP_SUMMARY
 
       - name: upload coverage to codecov
-        uses: codecov/codecov-action@v4
+        uses: codecov/codecov-action@v5
         with:
           file: ./${{ steps.coverage.outputs.coverage_file }}
           flags: unittests
