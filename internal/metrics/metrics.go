@@ -44,29 +44,29 @@ type Client interface {
 // New creates a new Metrics instance.
 func New(config *config.Config, client Client, logger log.Logger, meter metric.Meter, traces trace.Tracer) (*Metrics, error) {
 
-	otelForwarderCounter, err := meter.Int64Counter(
-		"otel_forwarder_requests_total",
-		metric.WithDescription("Total number of otel forwarder requests"),
+	otelLgtmProxyCounter, err := meter.Int64Counter(
+		"otel_lgtm_proxy_requests_total",
+		metric.WithDescription("Total number of otel lgtm proxy requests"),
 	)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create otel forwarder counter: %w", err)
+		return nil, fmt.Errorf("failed to create otel lgtm proxy counter: %w", err)
 	}
 
-	otelForwarderLatency, err := meter.Int64Histogram(
-		"otel_forwarder_request_duration_seconds",
-		metric.WithDescription("Latency of otel forwarder requests"),
+	otelLgtmProxyLatency, err := meter.Int64Histogram(
+		"otel_lgtm_proxy_request_duration_seconds",
+		metric.WithDescription("Latency of otel lgtm proxy requests"),
 		metric.WithUnit("ms"),
 	)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create otel forwarder latency histogram: %w", err)
+		return nil, fmt.Errorf("failed to create otel lgtm proxy latency histogram: %w", err)
 	}
 
-	otelForwarderResponseCode, err := meter.Int64Counter(
-		"otel_forwarder_response_code_total",
-		metric.WithDescription("Status code of otel forwarder responses"),
+	otelLgtmProxyResponseCode, err := meter.Int64Counter(
+		"otel_lgtm_proxy_response_code_total",
+		metric.WithDescription("Status code of otel lgtm proxy responses"),
 	)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create otel_forwarder_response_code_total counter: %w", err)
+		return nil, fmt.Errorf("failed to create otel_lgtm_proxy_response_code_total counter: %w", err)
 	}
 
 	if certutil.TLSEnabled(&config.Metrics.TLS) {
@@ -86,9 +86,9 @@ func New(config *config.Config, client Client, logger log.Logger, meter metric.M
 		logger:                    logger,
 		meter:                     meter,
 		tracer:                    traces,
-		otelForwarderCounter:      otelForwarderCounter,
-		otelForwarderLatency:      otelForwarderLatency,
-		otelForwarderResponseCode: otelForwarderResponseCode,
+		otelForwarderCounter:      otelLgtmProxyCounter,
+		otelForwarderLatency:      otelLgtmProxyLatency,
+		otelForwarderResponseCode: otelLgtmProxyResponseCode,
 	}, nil
 }
 
