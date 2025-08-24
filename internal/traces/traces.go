@@ -31,9 +31,10 @@ type Traces struct {
 	logger                    log.Logger
 	meter                     metric.Meter
 	tracer                    trace.Tracer
-	otelForwarderCounter      metric.Int64Counter
-	otelForwarderLatency      metric.Int64Histogram
-	otelForwarderResponseCode metric.Int64Counter
+	otelLgtmProxyRequests     metric.Int64Counter
+	otelLgtmProxyRecords      metric.Int64Counter
+	otelLgtmProxyLatency      metric.Int64Histogram
+	otelLgtmProxyResponseCode metric.Int64Counter
 }
 
 //go:generate mockgen -package traces -source traces.go -destination traces_mock.go
@@ -44,12 +45,20 @@ type Client interface {
 // New creates a new Traces instance.
 func New(config *config.Config, client Client, logger log.Logger, meter metric.Meter, tracer trace.Tracer) (*Traces, error) {
 
-	otelLgtmProxyCounter, err := meter.Int64Counter(
+	otelLgtmProxyRequests, err := meter.Int64Counter(
 		"otel_lgtm_proxy_requests_total",
 		metric.WithDescription("Total number of otel lgtm proxy requests"),
 	)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create otel lgtm proxy counter: %w", err)
+		return nil, fmt.Errorf("failed to create otel lgtm proxy requests counter: %w", err)
+	}
+
+	otelLgtmProxyRecords, err := meter.Int64Counter(
+		"otel_lgtm_proxy_records_total",
+		metric.WithDescription("Total number of otel lgtm proxy records processed"),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create otel lgtm proxy records counter: %w", err)
 	}
 
 	otelLgtmProxyLatency, err := meter.Int64Histogram(
@@ -87,9 +96,10 @@ func New(config *config.Config, client Client, logger log.Logger, meter metric.M
 		logger:                    logger,
 		meter:                     meter,
 		tracer:                    tracer,
-		otelForwarderCounter:      otelLgtmProxyCounter,
-		otelForwarderLatency:      otelLgtmProxyLatency,
-		otelForwarderResponseCode: otelLgtmProxyResponseCode,
+		otelLgtmProxyRequests:     otelLgtmProxyRequests,
+		otelLgtmProxyRecords:      otelLgtmProxyRecords,
+		otelLgtmProxyLatency:      otelLgtmProxyLatency,
+		otelLgtmProxyResponseCode: otelLgtmProxyResponseCode,
 	}, nil
 }
 
@@ -201,7 +211,11 @@ func (t *Traces) dispatch(ctx context.Context, tenantMap map[string]*tracepb.Tra
 			resp, err := t.send(ctx, tenant, traces)
 			if err != nil {
 
-				t.otelForwarderCounter.Add(ctx, int64(len(traces.ResourceSpans)), metric.WithAttributes(
+				t.otelLgtmProxyRequests.Add(ctx, 1, metric.WithAttributes(
+					append(signalAttributes, attribute.String("signal.status", "failed"))...,
+				))
+
+				t.otelLgtmProxyRecords.Add(ctx, int64(len(traces.ResourceSpans)), metric.WithAttributes(
 					append(signalAttributes, attribute.String("signal.status", "failed"))...,
 				))
 
@@ -212,7 +226,7 @@ func (t *Traces) dispatch(ctx context.Context, tenantMap map[string]*tracepb.Tra
 				return
 			}
 
-			t.otelForwarderResponseCode.Add(ctx, 1, metric.WithAttributes(
+			t.otelLgtmProxyResponseCode.Add(ctx, 1, metric.WithAttributes(
 				append(signalAttributes,
 					attribute.String("signal.status", "success"),
 					attribute.String("signal.response",
@@ -220,7 +234,11 @@ func (t *Traces) dispatch(ctx context.Context, tenantMap map[string]*tracepb.Tra
 					))...,
 			))
 
-			t.otelForwarderCounter.Add(ctx, int64(len(traces.ResourceSpans)), metric.WithAttributes(
+			t.otelLgtmProxyRequests.Add(ctx, 1, metric.WithAttributes(
+				append(signalAttributes, attribute.String("signal.status", "success"))...,
+			))
+
+			t.otelLgtmProxyRecords.Add(ctx, int64(len(traces.ResourceSpans)), metric.WithAttributes(
 				append(signalAttributes, attribute.String("signal.status", "success"))...,
 			))
 
@@ -282,7 +300,7 @@ func (t *Traces) send(ctx context.Context, tenant string, traces *tracepb.Traces
 	span.SetAttributes(respAttributes...)
 	span.SetStatus(codes.Ok, "traces sent successfully")
 
-	t.otelForwarderLatency.Record(ctx, time.Since(start).Milliseconds(), metric.WithAttributes(
+	t.otelLgtmProxyLatency.Record(ctx, time.Since(start).Milliseconds(), metric.WithAttributes(
 		respAttributes...,
 	))
 

@@ -31,9 +31,10 @@ type Metrics struct {
 	logger                    log.Logger
 	meter                     metric.Meter
 	tracer                    trace.Tracer
-	otelForwarderCounter      metric.Int64Counter
-	otelForwarderLatency      metric.Int64Histogram
-	otelForwarderResponseCode metric.Int64Counter
+	otelLgtmProxyRequests     metric.Int64Counter
+	otelLgtmProxyRecords      metric.Int64Counter
+	otelLgtmProxyLatency      metric.Int64Histogram
+	otelLgtmProxyResponseCode metric.Int64Counter
 }
 
 //go:generate mockgen -package metrics -source metrics.go -destination metrics_mock.go
@@ -44,12 +45,20 @@ type Client interface {
 // New creates a new Metrics instance.
 func New(config *config.Config, client Client, logger log.Logger, meter metric.Meter, traces trace.Tracer) (*Metrics, error) {
 
-	otelLgtmProxyCounter, err := meter.Int64Counter(
+	otelLgtmProxyRequests, err := meter.Int64Counter(
 		"otel_lgtm_proxy_requests_total",
 		metric.WithDescription("Total number of otel lgtm proxy requests"),
 	)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create otel lgtm proxy counter: %w", err)
+		return nil, fmt.Errorf("failed to create otel lgtm proxy requests counter: %w", err)
+	}
+
+	otelLgtmProxyRecords, err := meter.Int64Counter(
+		"otel_lgtm_proxy_records_total",
+		metric.WithDescription("Total number of otel lgtm proxy records processed"),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create otel lgtm proxy records counter: %w", err)
 	}
 
 	otelLgtmProxyLatency, err := meter.Int64Histogram(
@@ -86,9 +95,10 @@ func New(config *config.Config, client Client, logger log.Logger, meter metric.M
 		logger:                    logger,
 		meter:                     meter,
 		tracer:                    traces,
-		otelForwarderCounter:      otelLgtmProxyCounter,
-		otelForwarderLatency:      otelLgtmProxyLatency,
-		otelForwarderResponseCode: otelLgtmProxyResponseCode,
+		otelLgtmProxyRequests:     otelLgtmProxyRequests,
+		otelLgtmProxyRecords:      otelLgtmProxyRecords,
+		otelLgtmProxyLatency:      otelLgtmProxyLatency,
+		otelLgtmProxyResponseCode: otelLgtmProxyResponseCode,
 	}, nil
 }
 
@@ -200,7 +210,11 @@ func (m *Metrics) dispatch(ctx context.Context, tenantMap map[string]*metricpb.M
 			resp, err := m.send(ctx, tenant, metrics)
 			if err != nil {
 
-				m.otelForwarderCounter.Add(ctx, int64(len(metrics.ResourceMetrics)), metric.WithAttributes(
+				m.otelLgtmProxyRequests.Add(ctx, 1, metric.WithAttributes(
+					append(signalAttributes, attribute.String("signal.status", "failed"))...,
+				))
+
+				m.otelLgtmProxyRecords.Add(ctx, int64(len(metrics.ResourceMetrics)), metric.WithAttributes(
 					append(signalAttributes, attribute.String("signal.status", "failed"))...,
 				))
 
@@ -211,7 +225,7 @@ func (m *Metrics) dispatch(ctx context.Context, tenantMap map[string]*metricpb.M
 				return
 			}
 
-			m.otelForwarderResponseCode.Add(ctx, 1, metric.WithAttributes(
+			m.otelLgtmProxyResponseCode.Add(ctx, 1, metric.WithAttributes(
 				append(signalAttributes,
 					attribute.String("signal.status", "success"),
 					attribute.String("signal.response",
@@ -219,7 +233,11 @@ func (m *Metrics) dispatch(ctx context.Context, tenantMap map[string]*metricpb.M
 					))...,
 			))
 
-			m.otelForwarderCounter.Add(ctx, int64(len(metrics.ResourceMetrics)), metric.WithAttributes(
+			m.otelLgtmProxyRequests.Add(ctx, 1, metric.WithAttributes(
+				append(signalAttributes, attribute.String("signal.status", "success"))...,
+			))
+
+			m.otelLgtmProxyRecords.Add(ctx, int64(len(metrics.ResourceMetrics)), metric.WithAttributes(
 				append(signalAttributes, attribute.String("signal.status", "success"))...,
 			))
 
@@ -281,7 +299,7 @@ func (m *Metrics) send(ctx context.Context, tenant string, metrics *metricpb.Met
 	span.SetAttributes(respAttributes...)
 	span.SetStatus(codes.Ok, "metrics sent successfully")
 
-	m.otelForwarderLatency.Record(ctx, time.Since(start).Milliseconds(), metric.WithAttributes(
+	m.otelLgtmProxyLatency.Record(ctx, time.Since(start).Milliseconds(), metric.WithAttributes(
 		respAttributes...,
 	))
 
