@@ -477,9 +477,9 @@ The service exposes metrics about its operation:
 
 | Metric | Type | Description | Labels |
 |--------|------|-------------|--------|
-| `otel_forwarder_requests_total` | Counter | Total forwarded requests | `signal.type`, `signal.tenant`, `signal.status` |
-| `otel_forwarder_request_duration_seconds` | Histogram | Request latency | `signal.type`, `signal.tenant` |
-| `otel_forwarder_response_code_total` | Counter | Response codes | `signal.type`, `signal.tenant`, `signal.response` |
+| `otel_lgtm_proxy_requests_total` | Counter | Total forwarded requests | `signal.type`, `signal.tenant`, `signal.status` |
+| `otel_lgtm_proxy_request_duration_seconds` | Histogram | Request latency | `signal.type`, `signal.tenant` |
+| `otel_lgtm_proxy_response_code_total` | Counter | Response codes | `signal.type`, `signal.tenant`, `signal.response` |
 
 ## Development
 
