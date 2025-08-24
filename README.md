@@ -1,6 +1,9 @@
 # otel-lgtm-proxy
 
-[![Tests](https://github.com/matt-gp/otel-lgtm-proxy/workflows/test/badge.svg?branch=main)](https://github.com/matt-gp/otel-lgtm-proxy/actions/workflows/test.yml)
+[![Release](https://github.com/matt-gp/otel-lgtm-proxy/actions/workflows/release.yml/badge.svg)](https://github.com/matt-gp/otel-lgtm-proxy/actions/workflows/release.yml)
+[![Test](https://github.com/matt-gp/otel-lgtm-proxy/actions/workflows/test.yml/badge.svg?branch=main)](https://github.com/matt-gp/otel-lgtm-proxy/actions/workflows/test.yml)
+[![Go Report Card](https://goreportcard.com/badge/github.com/matt-gp/otel-lgtm-proxy)](https://goreportcard.com/report/github.com/matt-gp/otel-lgtm-proxy)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 This service accepts OpenTelemetry protocol (OTLP) data in HTTP protobuf format for logs, metrics, and traces, partitions the payloads based on tenant identifiers in resource attributes, and forwards them to Grafana's LGTM (Loki, Grafana, Tempo, Mimir) stack with tenant-specific routing.
 
