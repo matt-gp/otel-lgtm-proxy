@@ -74,7 +74,7 @@ jobs:
           echo "**Release Coverage: $total_coverage**" >> $GITHUB_STEP_SUMMARY
 
       - name: Upload coverage artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: coverage-release-${{ github.run_id }}
           path: ${{ steps.coverage.outputs.coverage_file }}
