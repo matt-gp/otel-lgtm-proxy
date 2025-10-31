@@ -82,7 +82,7 @@ jobs:
           fail_ci_if_error: false
 
       - name: upload coverage artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: coverage-report-${{ github.run_id }}
           path: ${{ steps.coverage.outputs.coverage_file }}
