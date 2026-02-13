@@ -368,6 +368,89 @@ func TestPartition(t *testing.T) {
 			},
 		},
 		{
+			name: "multiple different tenant attributes",
+			request: &tracepb.TracesData{
+				ResourceSpans: []*tracepb.ResourceSpans{
+					{
+						Resource: &resourcepb.Resource{
+							Attributes: []*v1.KeyValue{
+								{
+									Key: "tenant_id",
+									Value: &v1.AnyValue{
+										Value: &v1.AnyValue_StringValue{StringValue: "tenant1"},
+									},
+								},
+							},
+						},
+					},
+					{
+						Resource: &resourcepb.Resource{
+							Attributes: []*v1.KeyValue{
+								{
+									Key: "tenantId",
+									Value: &v1.AnyValue{
+										Value: &v1.AnyValue_StringValue{StringValue: "tenant2"},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			expected: map[string]int{
+				"tenant1": 1,
+				"tenant2": 1,
+			},
+		},
+		{
+			name: "multiple different tenant attributes with dedicated label",
+			request: &tracepb.TracesData{
+				ResourceSpans: []*tracepb.ResourceSpans{
+					{
+						Resource: &resourcepb.Resource{
+							Attributes: []*v1.KeyValue{
+								{
+									Key: "tenant_id",
+									Value: &v1.AnyValue{
+										Value: &v1.AnyValue_StringValue{StringValue: "tenant2"},
+									},
+								},
+							},
+						},
+					},
+					{
+						Resource: &resourcepb.Resource{
+							Attributes: []*v1.KeyValue{
+								{
+									Key: "tenantId",
+									Value: &v1.AnyValue{
+										Value: &v1.AnyValue_StringValue{StringValue: "tenant3"},
+									},
+								},
+							},
+						},
+					},
+					{
+						Resource: &resourcepb.Resource{
+							Attributes: []*v1.KeyValue{
+								{
+									Key: "tenant.id",
+									Value: &v1.AnyValue{
+										Value: &v1.AnyValue_StringValue{StringValue: "tenant1"},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			expected: map[string]int{
+				"tenant1": 1,
+				"tenant2": 1,
+				"tenant3": 1,
+			},
+		},
+		{
 			name: "no tenant attribute",
 			request: &tracepb.TracesData{
 				ResourceSpans: []*tracepb.ResourceSpans{
@@ -397,6 +480,7 @@ func TestPartition(t *testing.T) {
 				Traces: config.Endpoint{},
 				Tenant: config.Tenant{
 					Label:   "tenant.id",
+					Labels:  []string{"tenantId", "tenant_id"},
 					Default: "default",
 				},
 			}

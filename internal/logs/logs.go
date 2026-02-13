@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -154,13 +155,28 @@ func (l *Logs) partition(ctx context.Context, req *logpb.LogsData) map[string]*l
 
 	tenantMap := make(map[string]*logpb.LogsData)
 
-	var tenant string
 	for _, resourceLog := range req.ResourceLogs {
 		logger.Trace(ctx, l.logger, fmt.Sprintf("%+v", resourceLog))
-		for _, attr := range resourceLog.Resource.Attributes {
-			if attr.Key == l.config.Tenant.Label {
-				tenant = attr.Value.GetStringValue()
-				break
+
+		tenant := ""
+
+		// First, check for the dedicated tenant label
+		if l.config.Tenant.Label != "" {
+			for _, attr := range resourceLog.Resource.Attributes {
+				if attr.Key == l.config.Tenant.Label {
+					tenant = attr.Value.GetStringValue()
+					break
+				}
+			}
+		}
+
+		// If not found and we have additional labels, check those
+		if tenant == "" && len(l.config.Tenant.Labels) > 0 {
+			for _, attr := range resourceLog.Resource.Attributes {
+				if slices.Contains(l.config.Tenant.Labels, attr.Key) {
+					tenant = attr.Value.GetStringValue()
+					break
+				}
 			}
 		}
 
