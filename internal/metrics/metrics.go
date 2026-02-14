@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -154,13 +155,28 @@ func (m *Metrics) partition(ctx context.Context, req *metricpb.MetricsData) map[
 
 	tenantMetricMap := make(map[string]*metricpb.MetricsData)
 
-	var tenant string
 	for _, resourceMetric := range req.ResourceMetrics {
 		logger.Trace(ctx, m.logger, fmt.Sprintf("%+v", resourceMetric))
-		for _, attr := range resourceMetric.Resource.Attributes {
-			if attr.Key == m.config.Tenant.Label {
-				tenant = attr.Value.GetStringValue()
-				break
+
+		tenant := ""
+
+		// First, check for the dedicated tenant label
+		if m.config.Tenant.Label != "" {
+			for _, attr := range resourceMetric.Resource.Attributes {
+				if attr.Key == m.config.Tenant.Label {
+					tenant = attr.Value.GetStringValue()
+					break
+				}
+			}
+		}
+
+		// If not found and we have additional labels, check those
+		if tenant == "" && len(m.config.Tenant.Labels) > 0 {
+			for _, attr := range resourceMetric.Resource.Attributes {
+				if slices.Contains(m.config.Tenant.Labels, attr.Key) {
+					tenant = attr.Value.GetStringValue()
+					break
+				}
 			}
 		}
 

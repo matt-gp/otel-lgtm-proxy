@@ -155,7 +155,8 @@ export OLP_METRICS_ADDRESS=http://localhost:8080/otlp/v1/metrics
 export OLP_TRACES_ADDRESS=http://localhost:3201/v1/traces
 
 # Tenant configuration
-export TENANT_LABEL=tenant.id           # Resource attribute to extract tenant from
+export TENANT_LABEL=tenant.id           # Primary tenant attribute (checked first)
+export TENANT_LABELS=tenantId,tenant_id # Fallback tenant attributes
 export TENANT_HEADER=X-Scope-OrgID      # Header to add to backend requests
 export TENANT_DEFAULT=default           # Default tenant if not found
 
@@ -427,10 +428,25 @@ Available TLS options for each:
 ### Tenant Configuration
 | Environment Variable | Default | Description |
 |---------------------|---------|-------------|
-| `TENANT_LABEL` | `tenant.id` | Resource attribute key containing tenant ID |
+| `TENANT_LABEL` | `tenant.id` | Primary resource attribute key containing tenant ID (checked first) |
+| `TENANT_LABELS` | `""` | Comma-separated list of fallback attribute keys to check if primary is not found |
 | `TENANT_FORMAT` | `%s` | Format string for tenant ID (e.g., `%s-prod`) |
 | `TENANT_HEADER` | `X-Scope-OrgID` | HTTP header for tenant ID when forwarding |
 | `TENANT_DEFAULT` | `default` | Default tenant when none specified |
+
+**Tenant Resolution Priority:**
+1. First checks the dedicated label specified by `TENANT_LABEL` (e.g., `tenant.id`)
+2. If not found, checks each label in `TENANT_LABELS` in order (e.g., `tenantId`, `tenant_id`)
+3. If still not found, uses the default specified by `TENANT_DEFAULT`
+
+**Example Configuration:**
+```bash
+export TENANT_LABEL=tenant.id                    # Primary tenant attribute (checked first)
+export TENANT_LABELS=tenantId,tenant_id,org.id   # Fallback attributes (checked in order)
+export TENANT_DEFAULT=default                     # Used if no tenant attribute found
+```
+
+This allows flexibility when working with different OpenTelemetry SDKs or legacy systems that may use different attribute naming conventions.
 
 ### OpenTelemetry Configuration
 Standard OpenTelemetry environment variables are supported:
@@ -442,17 +458,45 @@ Standard OpenTelemetry environment variables are supported:
 
 ## Tenant Partitioning
 
-The service extracts tenant information from OpenTelemetry resource attributes using dedicated partitioning functions in each domain package:
+The service extracts tenant information from OpenTelemetry resource attributes using a priority-based lookup system:
 
 ```protobuf
 Resource {
   attributes: [
     {
-      key: "tenant.id"     // Configurable via TENANT_LABEL
+      key: "tenant.id"     // Primary label (TENANT_LABEL) - checked first
       value: "my-tenant"   // Used as tenant identifier
     }
   ]
 }
+```
+
+### Tenant Resolution Logic
+
+The service uses a **priority-based approach** to find the tenant identifier:
+
+1. **Primary Label**: First checks the dedicated tenant label (`TENANT_LABEL`, default: `tenant.id`)
+2. **Fallback Labels**: If not found, checks each label in `TENANT_LABELS` in order (e.g., `tenantId`, `tenant_id`)
+3. **Default Tenant**: If no matching attribute is found, uses `TENANT_DEFAULT` (default: `default`)
+
+**Example:**
+```bash
+# Configuration
+TENANT_LABEL=tenant.id
+TENANT_LABELS=tenantId,tenant_id,organization.id
+TENANT_DEFAULT=shared
+
+# Scenario 1: Resource has tenant.id attribute
+# → Uses value from tenant.id (primary label)
+
+# Scenario 2: Resource has only tenantId attribute  
+# → Uses value from tenantId (first fallback label)
+
+# Scenario 3: Resource has only organization.id attribute
+# → Uses value from organization.id (third fallback label)
+
+# Scenario 4: Resource has no tenant attributes
+# → Uses "shared" (TENANT_DEFAULT)
 ```
 
 ### Partitioning Functions
@@ -462,7 +506,19 @@ Each domain package implements tenant-specific partitioning:
 - **`metrics.partition()`** - Groups metric records by tenant from resource attributes
 - **`traces.partition()`** - Groups span records by tenant from resource attributes
 
-If no tenant attribute is found, the default tenant (`TENANT_DEFAULT`) is used.
+The partitioning logic ensures proper tenant isolation by:
+- Examining each resource's attributes
+- Applying the priority-based tenant lookup
+- Grouping resources by their resolved tenant identifier
+- Adding the default tenant label if none was found
+
+### Multi-Tenant Support
+
+This priority-based approach enables:
+- **SDK Flexibility**: Support different OpenTelemetry SDKs with varying attribute conventions
+- **Migration Path**: Gradually migrate from legacy tenant attributes to standardized ones
+- **Backwards Compatibility**: Work with existing systems using different naming schemes
+- **Tenant Isolation**: Ensure proper data separation per tenant across all signal types
 
 ## Forwarding Behavior
 
@@ -632,7 +688,8 @@ export OLP_METRICS_ADDRESS=http://mimir:8080/otlp/v1/metrics
 export OLP_TRACES_ADDRESS=http://tempo:3201/v1/traces
 
 # Configure tenant extraction
-export TENANT_LABEL=service.namespace
+export TENANT_LABEL=service.namespace      # Primary tenant attribute
+export TENANT_LABELS=namespace,tenant_id   # Fallback attributes
 export TENANT_HEADER=X-Scope-OrgID
 export TENANT_DEFAULT=shared
 
@@ -676,6 +733,7 @@ data:
   OLP_METRICS_ADDRESS: "http://mimir.monitoring:8080/otlp/v1/metrics"
   OLP_TRACES_ADDRESS: "http://tempo.monitoring:3201/v1/traces"
   TENANT_LABEL: "k8s.namespace.name"
+  TENANT_LABELS: "tenant.id,namespace"
   TENANT_HEADER: "X-Scope-OrgID"
   TENANT_DEFAULT: "default-namespace"
 ```

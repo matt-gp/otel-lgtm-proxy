@@ -371,6 +371,89 @@ func TestPartition(t *testing.T) {
 			},
 		},
 		{
+			name: "multiple different tenant attributes",
+			request: &metricpb.MetricsData{
+				ResourceMetrics: []*metricpb.ResourceMetrics{
+					{
+						Resource: &resourcepb.Resource{
+							Attributes: []*v1.KeyValue{
+								{
+									Key: "tenant_id",
+									Value: &v1.AnyValue{
+										Value: &v1.AnyValue_StringValue{StringValue: "tenant1"},
+									},
+								},
+							},
+						},
+					},
+					{
+						Resource: &resourcepb.Resource{
+							Attributes: []*v1.KeyValue{
+								{
+									Key: "tenantId",
+									Value: &v1.AnyValue{
+										Value: &v1.AnyValue_StringValue{StringValue: "tenant2"},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			expected: map[string]int{
+				"tenant1": 1,
+				"tenant2": 1,
+			},
+		},
+		{
+			name: "multiple different tenant attributes with dedicated label",
+			request: &metricpb.MetricsData{
+				ResourceMetrics: []*metricpb.ResourceMetrics{
+					{
+						Resource: &resourcepb.Resource{
+							Attributes: []*v1.KeyValue{
+								{
+									Key: "tenant_id",
+									Value: &v1.AnyValue{
+										Value: &v1.AnyValue_StringValue{StringValue: "tenant2"},
+									},
+								},
+							},
+						},
+					},
+					{
+						Resource: &resourcepb.Resource{
+							Attributes: []*v1.KeyValue{
+								{
+									Key: "tenantId",
+									Value: &v1.AnyValue{
+										Value: &v1.AnyValue_StringValue{StringValue: "tenant3"},
+									},
+								},
+							},
+						},
+					},
+					{
+						Resource: &resourcepb.Resource{
+							Attributes: []*v1.KeyValue{
+								{
+									Key: "tenant.id",
+									Value: &v1.AnyValue{
+										Value: &v1.AnyValue_StringValue{StringValue: "tenant1"},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			expected: map[string]int{
+				"tenant1": 1,
+				"tenant2": 1,
+				"tenant3": 1,
+			},
+		},
+		{
 			name: "no tenant attribute",
 			request: &metricpb.MetricsData{
 				ResourceMetrics: []*metricpb.ResourceMetrics{
@@ -400,6 +483,7 @@ func TestPartition(t *testing.T) {
 				Metrics: config.Endpoint{},
 				Tenant: config.Tenant{
 					Label:   "tenant.id",
+					Labels:  []string{"tenantId", "tenant_id"},
 					Default: "default",
 				},
 			}
