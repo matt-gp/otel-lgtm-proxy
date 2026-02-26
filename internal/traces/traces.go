@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"reflect"
 	"slices"
 	"strings"
 	"sync"
@@ -15,6 +16,7 @@ import (
 	"github.com/matt-gp/otel-lgtm-proxy/internal/certutil"
 	"github.com/matt-gp/otel-lgtm-proxy/internal/config"
 	"github.com/matt-gp/otel-lgtm-proxy/internal/logger"
+	"github.com/matt-gp/otel-lgtm-proxy/internal/protoutil"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/baggage"
 	"go.opentelemetry.io/otel/codes"
@@ -23,8 +25,6 @@ import (
 	"go.opentelemetry.io/otel/trace"
 	v1 "go.opentelemetry.io/proto/otlp/common/v1"
 	tracepb "go.opentelemetry.io/proto/otlp/trace/v1"
-	"google.golang.org/protobuf/encoding/protojson"
-	"google.golang.org/protobuf/proto"
 )
 
 const (
@@ -126,8 +126,17 @@ func (t *Traces) Handler(w http.ResponseWriter, r *http.Request) {
 	defer span.End()
 	span.SetAttributes(signalTypeAttr)
 
-	traces, err := unmarshal(r)
+	result, err := protoutil.Unmarshal(r, reflect.TypeOf(&tracepb.TracesData{}))
 	if err != nil {
+		logger.Error(ctx, t.logger, err.Error(), signalTypeLogAttr)
+		http.Error(w, "failed to unmarshal traces", http.StatusBadRequest)
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "failed to unmarshal traces")
+		return
+	}
+
+	traces := result.(*tracepb.TracesData)
+	if traces == nil {
 		logger.Error(ctx, t.logger, err.Error(), signalTypeLogAttr)
 		http.Error(w, "failed to unmarshal traces", http.StatusBadRequest)
 		span.RecordError(err)
@@ -300,7 +309,7 @@ func (t *Traces) send(ctx context.Context, tenant string, traces *tracepb.Traces
 		attribute.Int("signal.tenant.records", len(traces.ResourceSpans)),
 	}...)
 
-	body, err := marshal(traces)
+	body, err := protoutil.Marshal(traces)
 	if err != nil {
 		return http.Response{}, err
 	}
@@ -338,39 +347,4 @@ func (t *Traces) send(ctx context.Context, tenant string, traces *tracepb.Traces
 	))
 
 	return *resp, nil
-}
-
-// marshal marshals the request using protobuf binary format.
-func marshal(traces *tracepb.TracesData) ([]byte, error) {
-	return proto.Marshal(traces)
-}
-
-// unmarshal unmarshals the request.
-func unmarshal(req *http.Request) (*tracepb.TracesData, error) {
-
-	var traces tracepb.TracesData
-
-	body, err := io.ReadAll(req.Body)
-	if err != nil {
-		return nil, err
-	}
-
-	contentType := req.Header.Get("Content-Type")
-
-	// Try protojson first for JSON-like content
-	if contentType == "application/json" || contentType == "" {
-		if err := protojson.Unmarshal(body, &traces); err != nil {
-			// If protojson fails, try binary protobuf
-			if protoErr := proto.Unmarshal(body, &traces); protoErr != nil {
-				return nil, err // return the original protojson error
-			}
-		}
-	} else {
-		// For protobuf content types, use binary protobuf directly
-		if err := proto.Unmarshal(body, &traces); err != nil {
-			return nil, err
-		}
-	}
-
-	return &traces, nil
 }
