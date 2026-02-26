@@ -9,12 +9,12 @@ import (
 	"net/http"
 	"reflect"
 	"slices"
-	"strings"
 	"sync"
 	"time"
 
 	"github.com/matt-gp/otel-lgtm-proxy/internal/certutil"
 	"github.com/matt-gp/otel-lgtm-proxy/internal/config"
+	"github.com/matt-gp/otel-lgtm-proxy/internal/httputil"
 	"github.com/matt-gp/otel-lgtm-proxy/internal/logger"
 	"github.com/matt-gp/otel-lgtm-proxy/internal/protoutil"
 	"go.opentelemetry.io/otel/attribute"
@@ -153,21 +153,6 @@ func (l *Logs) Handler(w http.ResponseWriter, r *http.Request) {
 
 	span.SetStatus(codes.Ok, "processed successfully")
 	w.WriteHeader(http.StatusAccepted)
-}
-
-// addHeaders adds the headers to the request.
-func (l *Logs) addHeaders(tenant string, req *http.Request) {
-	req.Header.Set("Content-Type", "application/x-protobuf")
-	req.Header.Add(l.config.Tenant.Header, fmt.Sprintf(l.config.Tenant.Format, tenant))
-
-	// Add custom headers
-	customHeaders := strings.Split(l.config.Logs.Headers, ",")
-	for _, customHeader := range customHeaders {
-		kv := strings.SplitN(customHeader, "=", 2)
-		if len(kv) == 2 {
-			req.Header.Add(kv[0], kv[1])
-		}
-	}
 }
 
 // partition partitions the request by tenant.
@@ -321,7 +306,7 @@ func (l *Logs) send(ctx context.Context, tenant string, logs *logpb.LogsData) (h
 		return http.Response{}, err
 	}
 
-	l.addHeaders(tenant, req)
+	httputil.AddHeaders(tenant, req, l.config, l.config.Logs.Headers)
 
 	resp, err := l.client.Do(req)
 	if err != nil {
