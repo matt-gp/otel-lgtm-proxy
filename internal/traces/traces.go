@@ -9,12 +9,12 @@ import (
 	"net/http"
 	"reflect"
 	"slices"
-	"strings"
 	"sync"
 	"time"
 
 	"github.com/matt-gp/otel-lgtm-proxy/internal/certutil"
 	"github.com/matt-gp/otel-lgtm-proxy/internal/config"
+	"github.com/matt-gp/otel-lgtm-proxy/internal/httputil"
 	"github.com/matt-gp/otel-lgtm-proxy/internal/logger"
 	"github.com/matt-gp/otel-lgtm-proxy/internal/protoutil"
 	"go.opentelemetry.io/otel/attribute"
@@ -154,21 +154,6 @@ func (t *Traces) Handler(w http.ResponseWriter, r *http.Request) {
 
 	span.SetStatus(codes.Ok, "processed successfully")
 	w.WriteHeader(http.StatusAccepted)
-}
-
-// addHeaders adds the headers to the request.
-func (t *Traces) addHeaders(tenant string, req *http.Request) {
-	req.Header.Set("Content-Type", "application/x-protobuf")
-	req.Header.Add(t.config.Tenant.Header, fmt.Sprintf(t.config.Tenant.Format, tenant))
-
-	// Add custom headers
-	customHeaders := strings.Split(t.config.Logs.Headers, ",")
-	for _, customHeader := range customHeaders {
-		kv := strings.SplitN(customHeader, "=", 2)
-		if len(kv) == 2 {
-			req.Header.Add(kv[0], kv[1])
-		}
-	}
 }
 
 // partition partitions the request by tenant.
@@ -319,7 +304,7 @@ func (t *Traces) send(ctx context.Context, tenant string, traces *tracepb.Traces
 		return http.Response{}, err
 	}
 
-	t.addHeaders(tenant, req)
+	httputil.AddHeaders(tenant, req, t.config, t.config.Traces.Headers)
 
 	resp, err := t.client.Do(req)
 	if err != nil {
