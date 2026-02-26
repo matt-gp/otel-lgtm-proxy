@@ -18,7 +18,6 @@ import (
 	"github.com/matt-gp/otel-lgtm-proxy/internal/logger"
 	"github.com/matt-gp/otel-lgtm-proxy/internal/protoutil"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/baggage"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/log"
 	"go.opentelemetry.io/otel/metric"
@@ -96,36 +95,32 @@ func New(config *config.Config, client Client, logger log.Logger, meter metric.M
 // Handler handles incoming log requests.
 func (l *Logs) Handler(w http.ResponseWriter, r *http.Request) {
 
-	// Add signal type to baggage so it propagates to all child spans
-	member, _ := baggage.NewMember("signal.type", SIGNAL_TYPE)
-	bag, _ := baggage.New(member)
-	ctx := baggage.ContextWithBaggage(r.Context(), bag)
-
-	ctx, span := l.tracer.Start(ctx, "handler")
+	ctx, span := l.tracer.Start(r.Context(), "logs.Handler")
 	defer span.End()
 	span.SetAttributes(signalTypeAttr)
 
 	result, err := protoutil.Unmarshal(r, reflect.TypeOf(&logpb.LogsData{}))
 	if err != nil {
 		logger.Error(ctx, l.logger, err.Error(), signalTypeLogAttr)
-		http.Error(w, "failed to unmarshal logs", http.StatusBadRequest)
+		http.Error(w, fmt.Sprintf("failed to unmarshal logs: %v", err), http.StatusBadRequest)
 		span.RecordError(err)
-		span.SetStatus(codes.Error, "failed to unmarshal logs")
+		span.SetStatus(codes.Error, "failed to unmarshal")
 		return
 	}
 
 	logs := result.(*logpb.LogsData)
 	if logs == nil {
+		err := fmt.Errorf("failed to unmarshal logs: result is nil")
 		logger.Error(ctx, l.logger, err.Error(), signalTypeLogAttr)
-		http.Error(w, "failed to unmarshal logs", http.StatusBadRequest)
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		span.RecordError(err)
-		span.SetStatus(codes.Error, "failed to unmarshal logs")
+		span.SetStatus(codes.Error, "failed to unmarshal")
 		return
 	}
 
 	if err := l.dispatch(ctx, l.partition(ctx, logs)); err != nil {
 		logger.Error(ctx, l.logger, err.Error(), signalTypeLogAttr)
-		http.Error(w, "failed to dispatch logs", http.StatusInternalServerError)
+		http.Error(w, fmt.Sprintf("failed to dispatch logs: %v", err), http.StatusInternalServerError)
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "failed to dispatch")
 		return
@@ -138,7 +133,7 @@ func (l *Logs) Handler(w http.ResponseWriter, r *http.Request) {
 // partition partitions the request by tenant.
 func (l *Logs) partition(ctx context.Context, req *logpb.LogsData) map[string]*logpb.LogsData {
 
-	ctx, span := l.tracer.Start(ctx, "partition")
+	ctx, span := l.tracer.Start(ctx, "logs.partition")
 	defer span.End()
 	span.SetAttributes(signalTypeAttr)
 
@@ -197,7 +192,7 @@ func (l *Logs) partition(ctx context.Context, req *logpb.LogsData) map[string]*l
 // dispatch sends all the request to the target.
 func (l *Logs) dispatch(ctx context.Context, tenantMap map[string]*logpb.LogsData) error {
 
-	ctx, span := l.tracer.Start(ctx, "dispatch")
+	ctx, span := l.tracer.Start(ctx, "logs.dispatch")
 	defer span.End()
 	span.SetAttributes(signalTypeAttr)
 
@@ -249,7 +244,7 @@ func (l *Logs) dispatch(ctx context.Context, tenantMap map[string]*logpb.LogsDat
 func (l *Logs) send(ctx context.Context, tenant string, logs *logpb.LogsData) (http.Response, error) {
 
 	start := time.Now()
-	ctx, span := l.tracer.Start(ctx, "send")
+	ctx, span := l.tracer.Start(ctx, "logs.send")
 	defer span.End()
 
 	signalTenantAttr := attribute.String("signal.tenant", tenant)
@@ -272,7 +267,6 @@ func (l *Logs) send(ctx context.Context, tenant string, logs *logpb.LogsData) (h
 	}
 
 	httputil.AddHeaders(tenant, req, l.config, l.config.Logs.Headers)
-
 	resp, err := l.client.Do(req)
 	if err != nil {
 		span.RecordError(err)
@@ -287,7 +281,7 @@ func (l *Logs) send(ctx context.Context, tenant string, logs *logpb.LogsData) (h
 	}()
 
 	respAttributes := []attribute.KeyValue{
-		attribute.String("signal.response.status,code", fmt.Sprintf("%d", resp.StatusCode)),
+		attribute.String("signal.response.status.code", fmt.Sprintf("%d", resp.StatusCode)),
 	}
 
 	span.SetAttributes(respAttributes...)

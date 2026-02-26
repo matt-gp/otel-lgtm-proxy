@@ -18,7 +18,6 @@ import (
 	"github.com/matt-gp/otel-lgtm-proxy/internal/logger"
 	"github.com/matt-gp/otel-lgtm-proxy/internal/protoutil"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/baggage"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/log"
 	"go.opentelemetry.io/otel/metric"
@@ -97,28 +96,24 @@ func New(config *config.Config, client Client, logger log.Logger, meter metric.M
 // Handler handles incoming trace requests.
 func (t *Traces) Handler(w http.ResponseWriter, r *http.Request) {
 
-	// Add signal type to baggage so it propagates to all child spans
-	member, _ := baggage.NewMember("signal.type", SIGNAL_TYPE)
-	bag, _ := baggage.New(member)
-	ctx := baggage.ContextWithBaggage(r.Context(), bag)
-
-	ctx, span := t.tracer.Start(ctx, "handler")
+	ctx, span := t.tracer.Start(r.Context(), "traces.Handler")
 	defer span.End()
 	span.SetAttributes(signalTypeAttr)
 
 	result, err := protoutil.Unmarshal(r, reflect.TypeOf(&tracepb.TracesData{}))
 	if err != nil {
 		logger.Error(ctx, t.logger, err.Error(), signalTypeLogAttr)
-		http.Error(w, "failed to unmarshal traces", http.StatusBadRequest)
+		http.Error(w, fmt.Sprintf("failed to unmarshal traces: %v", err), http.StatusBadRequest)
 		span.RecordError(err)
-		span.SetStatus(codes.Error, "failed to unmarshal traces")
+		span.SetStatus(codes.Error, "failed to unmarshal")
 		return
 	}
 
 	traces := result.(*tracepb.TracesData)
 	if traces == nil {
+		err := fmt.Errorf("failed to unmarshal traces: result is nil")
 		logger.Error(ctx, t.logger, err.Error(), signalTypeLogAttr)
-		http.Error(w, "failed to unmarshal traces", http.StatusBadRequest)
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "failed to unmarshal")
 		return
@@ -126,7 +121,7 @@ func (t *Traces) Handler(w http.ResponseWriter, r *http.Request) {
 
 	if err := t.dispatch(ctx, t.partition(ctx, traces)); err != nil {
 		logger.Error(ctx, t.logger, err.Error(), signalTypeLogAttr)
-		http.Error(w, "failed to dispatch traces", http.StatusInternalServerError)
+		http.Error(w, fmt.Sprintf("failed to dispatch traces: %v", err), http.StatusInternalServerError)
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "failed to dispatch")
 		return
@@ -139,7 +134,7 @@ func (t *Traces) Handler(w http.ResponseWriter, r *http.Request) {
 // partition partitions the request by tenant.
 func (t *Traces) partition(ctx context.Context, req *tracepb.TracesData) map[string]*tracepb.TracesData {
 
-	ctx, span := t.tracer.Start(ctx, "partition")
+	ctx, span := t.tracer.Start(ctx, "traces.partition")
 	defer span.End()
 	span.SetAttributes(signalTypeAttr)
 
@@ -198,7 +193,7 @@ func (t *Traces) partition(ctx context.Context, req *tracepb.TracesData) map[str
 // dispatch sends all the request to the target.
 func (t *Traces) dispatch(ctx context.Context, tenantMap map[string]*tracepb.TracesData) error {
 
-	ctx, span := t.tracer.Start(ctx, "dispatch")
+	ctx, span := t.tracer.Start(ctx, "traces.dispatch")
 	defer span.End()
 	span.SetAttributes(signalTypeAttr)
 
@@ -250,7 +245,7 @@ func (t *Traces) dispatch(ctx context.Context, tenantMap map[string]*tracepb.Tra
 func (t *Traces) send(ctx context.Context, tenant string, traces *tracepb.TracesData) (http.Response, error) {
 
 	start := time.Now()
-	ctx, span := t.tracer.Start(ctx, "send")
+	ctx, span := t.tracer.Start(ctx, "traces.send")
 	defer span.End()
 
 	signalTenantAttr := attribute.String("signal.tenant", tenant)
