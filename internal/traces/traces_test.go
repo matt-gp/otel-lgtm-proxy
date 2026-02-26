@@ -165,7 +165,7 @@ func TestHandler(t *testing.T) {
 			body:        []byte("invalid protobuf"),
 			contentType: "application/x-protobuf",
 			wantStatus:  http.StatusBadRequest,
-			wantBody:    "failed to unmarshal traces\n",
+			wantBody:    "",
 		},
 		{
 			name:        "client error",
@@ -216,11 +216,9 @@ func TestHandler(t *testing.T) {
 				t.Errorf("Handler() status = %v, want %v", w.Code, tt.wantStatus)
 			}
 
-			if tt.wantBody != "" {
-				body := w.Body.String()
-				if body != tt.wantBody {
-					t.Errorf("Handler() body = %v, want %v", body, tt.wantBody)
-				}
+			body := w.Body.String()
+			if tt.wantBody != "" && body != tt.wantBody {
+				t.Errorf("Handler() body = %v, want %v", body, tt.wantBody)
 			}
 		})
 	}

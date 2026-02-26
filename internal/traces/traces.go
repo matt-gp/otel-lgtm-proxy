@@ -18,7 +18,6 @@ import (
 	"github.com/matt-gp/otel-lgtm-proxy/internal/logger"
 	"github.com/matt-gp/otel-lgtm-proxy/internal/protoutil"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/baggage"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/log"
 	"go.opentelemetry.io/otel/metric"
@@ -37,15 +36,13 @@ var (
 )
 
 type Traces struct {
-	config                    *config.Config
-	client                    Client
-	logger                    log.Logger
-	meter                     metric.Meter
-	tracer                    trace.Tracer
-	otelLgtmProxyRequests     metric.Int64Counter
-	otelLgtmProxyRecords      metric.Int64Counter
-	otelLgtmProxyLatency      metric.Int64Histogram
-	otelLgtmProxyResponseCode metric.Int64Counter
+	config               *config.Config
+	client               Client
+	logger               log.Logger
+	meter                metric.Meter
+	tracer               trace.Tracer
+	otelLgtmProxyRecords metric.Int64Counter
+	otelLgtmProxyLatency metric.Int64Histogram
 }
 
 //go:generate mockgen -package traces -source traces.go -destination traces_mock.go
@@ -55,14 +52,6 @@ type Client interface {
 
 // New creates a new Traces instance.
 func New(config *config.Config, client Client, logger log.Logger, meter metric.Meter, tracer trace.Tracer) (*Traces, error) {
-
-	otelLgtmProxyRequests, err := meter.Int64Counter(
-		"otel_lgtm_proxy_requests_total",
-		metric.WithDescription("Total number of otel lgtm proxy requests"),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create otel lgtm proxy requests counter: %w", err)
-	}
 
 	otelLgtmProxyRecords, err := meter.Int64Counter(
 		"otel_lgtm_proxy_records_total",
@@ -81,14 +70,6 @@ func New(config *config.Config, client Client, logger log.Logger, meter metric.M
 		return nil, fmt.Errorf("failed to create otel lgtm proxy latency histogram: %w", err)
 	}
 
-	otelLgtmProxyResponseCode, err := meter.Int64Counter(
-		"otel_lgtm_proxy_response_code_total",
-		metric.WithDescription("Status code of otel lgtm proxy responses"),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create otel_lgtm_proxy_response_code_total counter: %w", err)
-	}
-
 	if certutil.TLSEnabled(&config.Traces.TLS) {
 
 		tlsConfig, err := certutil.CreateTLSConfig(&config.Traces)
@@ -102,43 +83,37 @@ func New(config *config.Config, client Client, logger log.Logger, meter metric.M
 	}
 
 	return &Traces{
-		config:                    config,
-		client:                    client,
-		logger:                    logger,
-		meter:                     meter,
-		tracer:                    tracer,
-		otelLgtmProxyRequests:     otelLgtmProxyRequests,
-		otelLgtmProxyRecords:      otelLgtmProxyRecords,
-		otelLgtmProxyLatency:      otelLgtmProxyLatency,
-		otelLgtmProxyResponseCode: otelLgtmProxyResponseCode,
+		config:               config,
+		client:               client,
+		logger:               logger,
+		meter:                meter,
+		tracer:               tracer,
+		otelLgtmProxyRecords: otelLgtmProxyRecords,
+		otelLgtmProxyLatency: otelLgtmProxyLatency,
 	}, nil
 }
 
 // Handler handles incoming trace requests.
 func (t *Traces) Handler(w http.ResponseWriter, r *http.Request) {
 
-	// Add signal type to baggage so it propagates to all child spans
-	member, _ := baggage.NewMember("signal.type", SIGNAL_TYPE)
-	bag, _ := baggage.New(member)
-	ctx := baggage.ContextWithBaggage(r.Context(), bag)
-
-	ctx, span := t.tracer.Start(ctx, "handler")
+	ctx, span := t.tracer.Start(r.Context(), "traces.Handler")
 	defer span.End()
 	span.SetAttributes(signalTypeAttr)
 
 	result, err := protoutil.Unmarshal(r, reflect.TypeOf(&tracepb.TracesData{}))
 	if err != nil {
 		logger.Error(ctx, t.logger, err.Error(), signalTypeLogAttr)
-		http.Error(w, "failed to unmarshal traces", http.StatusBadRequest)
+		http.Error(w, fmt.Sprintf("failed to unmarshal traces: %v", err), http.StatusBadRequest)
 		span.RecordError(err)
-		span.SetStatus(codes.Error, "failed to unmarshal traces")
+		span.SetStatus(codes.Error, "failed to unmarshal")
 		return
 	}
 
 	traces := result.(*tracepb.TracesData)
 	if traces == nil {
+		err := fmt.Errorf("failed to unmarshal traces: result is nil")
 		logger.Error(ctx, t.logger, err.Error(), signalTypeLogAttr)
-		http.Error(w, "failed to unmarshal traces", http.StatusBadRequest)
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "failed to unmarshal")
 		return
@@ -146,7 +121,7 @@ func (t *Traces) Handler(w http.ResponseWriter, r *http.Request) {
 
 	if err := t.dispatch(ctx, t.partition(ctx, traces)); err != nil {
 		logger.Error(ctx, t.logger, err.Error(), signalTypeLogAttr)
-		http.Error(w, "failed to dispatch traces", http.StatusInternalServerError)
+		http.Error(w, fmt.Sprintf("failed to dispatch traces: %v", err), http.StatusInternalServerError)
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "failed to dispatch")
 		return
@@ -159,7 +134,7 @@ func (t *Traces) Handler(w http.ResponseWriter, r *http.Request) {
 // partition partitions the request by tenant.
 func (t *Traces) partition(ctx context.Context, req *tracepb.TracesData) map[string]*tracepb.TracesData {
 
-	ctx, span := t.tracer.Start(ctx, "partition")
+	ctx, span := t.tracer.Start(ctx, "traces.partition")
 	defer span.End()
 	span.SetAttributes(signalTypeAttr)
 
@@ -218,7 +193,7 @@ func (t *Traces) partition(ctx context.Context, req *tracepb.TracesData) map[str
 // dispatch sends all the request to the target.
 func (t *Traces) dispatch(ctx context.Context, tenantMap map[string]*tracepb.TracesData) error {
 
-	ctx, span := t.tracer.Start(ctx, "dispatch")
+	ctx, span := t.tracer.Start(ctx, "traces.dispatch")
 	defer span.End()
 	span.SetAttributes(signalTypeAttr)
 
@@ -237,12 +212,6 @@ func (t *Traces) dispatch(ctx context.Context, tenantMap map[string]*tracepb.Tra
 			resp, err := t.send(ctx, tenant, traces)
 			if err != nil {
 
-				signalAttributes = append(signalAttributes, attribute.String("signal.status", "failed"))
-
-				t.otelLgtmProxyRequests.Add(ctx, 1, metric.WithAttributes(
-					signalAttributes...,
-				))
-
 				t.otelLgtmProxyRecords.Add(ctx, int64(len(traces.ResourceSpans)), metric.WithAttributes(
 					signalAttributes...,
 				))
@@ -254,19 +223,10 @@ func (t *Traces) dispatch(ctx context.Context, tenantMap map[string]*tracepb.Tra
 				return
 			}
 
-			signalAttributes = append(signalAttributes, attribute.String("signal.status", "success"))
-
-			t.otelLgtmProxyResponseCode.Add(ctx, 1, metric.WithAttributes(
-				append(signalAttributes,
-					attribute.String("signal.response", fmt.Sprintf("%d", resp.StatusCode)))...,
-			))
-
-			t.otelLgtmProxyRequests.Add(ctx, 1, metric.WithAttributes(
-				signalAttributes...,
-			))
-
 			t.otelLgtmProxyRecords.Add(ctx, int64(len(traces.ResourceSpans)), metric.WithAttributes(
-				signalAttributes...,
+				append(signalAttributes,
+					attribute.String("signal.response.status.code", fmt.Sprintf("%d", resp.StatusCode)),
+				)...,
 			))
 
 			logger.Debug(ctx, t.logger, fmt.Sprintf("sent %d records status %d for tenant %s", len(traces.ResourceSpans), resp.StatusCode, tenant), signalTypeLogAttr)
@@ -285,12 +245,14 @@ func (t *Traces) dispatch(ctx context.Context, tenantMap map[string]*tracepb.Tra
 func (t *Traces) send(ctx context.Context, tenant string, traces *tracepb.TracesData) (http.Response, error) {
 
 	start := time.Now()
-	ctx, span := t.tracer.Start(ctx, "send")
+	ctx, span := t.tracer.Start(ctx, "traces.send")
 	defer span.End()
+
+	signalTenantAttr := attribute.String("signal.tenant", tenant)
 
 	span.SetAttributes([]attribute.KeyValue{
 		signalTypeAttr,
-		attribute.String("signal.tenant", tenant),
+		signalTenantAttr,
 		attribute.Int("signal.tenant.records", len(traces.ResourceSpans)),
 	}...)
 
@@ -320,15 +282,14 @@ func (t *Traces) send(ctx context.Context, tenant string, traces *tracepb.Traces
 	}()
 
 	respAttributes := []attribute.KeyValue{
-		attribute.Int64("signal.response.size", resp.ContentLength),
-		attribute.String("signal.response.status", resp.Status),
+		attribute.String("signal.response.status,code", fmt.Sprintf("%d", resp.StatusCode)),
 	}
 
 	span.SetAttributes(respAttributes...)
 	span.SetStatus(codes.Ok, "sent successfully")
 
 	t.otelLgtmProxyLatency.Record(ctx, time.Since(start).Milliseconds(), metric.WithAttributes(
-		append(respAttributes, signalTypeAttr)...,
+		append(respAttributes, signalTypeAttr, signalTenantAttr)...,
 	))
 
 	return *resp, nil
