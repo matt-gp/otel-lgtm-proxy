@@ -36,13 +36,14 @@ var (
 )
 
 type Logs struct {
-	config               *config.Config
-	client               Client
-	logger               log.Logger
-	meter                metric.Meter
-	tracer               trace.Tracer
-	otelLgtmProxyRecords metric.Int64Counter
-	otelLgtmProxyLatency metric.Int64Histogram
+	config                *config.Config
+	client                Client
+	logger                log.Logger
+	meter                 metric.Meter
+	tracer                trace.Tracer
+	otelLgtmProxyRecords  metric.Int64Counter
+	otelLgtmProxyRequests metric.Int64Counter
+	otelLgtmProxyLatency  metric.Int64Histogram
 }
 
 //go:generate mockgen -package logs -source logs.go -destination logs_mock.go
@@ -59,6 +60,14 @@ func New(config *config.Config, client Client, logger log.Logger, meter metric.M
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create otel lgtm proxy records counter: %w", err)
+	}
+
+	otelLgtmProxyRequests, err := meter.Int64Counter(
+		"otel_lgtm_proxy_requests_total",
+		metric.WithDescription("Total number of otel lgtm proxy requests processed"),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create otel lgtm proxy requests counter: %w", err)
 	}
 
 	otelLgtmProxyLatency, err := meter.Int64Histogram(
@@ -82,13 +91,14 @@ func New(config *config.Config, client Client, logger log.Logger, meter metric.M
 	}
 
 	return &Logs{
-		config:               config,
-		client:               client,
-		logger:               logger,
-		meter:                meter,
-		tracer:               tracer,
-		otelLgtmProxyRecords: otelLgtmProxyRecords,
-		otelLgtmProxyLatency: otelLgtmProxyLatency,
+		config:                config,
+		client:                client,
+		logger:                logger,
+		meter:                 meter,
+		tracer:                tracer,
+		otelLgtmProxyRecords:  otelLgtmProxyRecords,
+		otelLgtmProxyRequests: otelLgtmProxyRequests,
+		otelLgtmProxyLatency:  otelLgtmProxyLatency,
 	}, nil
 }
 
@@ -223,6 +233,12 @@ func (l *Logs) dispatch(ctx context.Context, tenantMap map[string]*logpb.LogsDat
 			}
 
 			l.otelLgtmProxyRecords.Add(ctx, int64(len(logs.ResourceLogs)), metric.WithAttributes(
+				append(signalAttributes,
+					attribute.String("signal.response.status.code", fmt.Sprintf("%d", resp.StatusCode)),
+				)...,
+			))
+
+			l.otelLgtmProxyRequests.Add(ctx, 1, metric.WithAttributes(
 				append(signalAttributes,
 					attribute.String("signal.response.status.code", fmt.Sprintf("%d", resp.StatusCode)),
 				)...,

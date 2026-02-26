@@ -537,6 +537,7 @@ The service exposes metrics about its operation:
 | Metric | Type | Description | Labels |
 |--------|------|-------------|--------|
 | `otel_lgtm_proxy_records_total` | Counter | Total number of records processed | `signal.type`, `signal.tenant`, `signal.response.status.code` |
+| `otel_lgtm_proxy_requests_total` | Counter | Total number of requests processed | `signal.type`, `signal.tenant`, `signal.response.status.code` |
 | `otel_lgtm_proxy_request_duration_seconds` | Histogram | Request latency | `signal.type`, `signal.tenant`, `signal.response.status.code` |
 
 ## Development
