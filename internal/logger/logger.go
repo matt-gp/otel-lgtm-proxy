@@ -1,3 +1,4 @@
+// Package logger provides convenience functions for OpenTelemetry logging.
 package logger
 
 import (
@@ -7,8 +8,8 @@ import (
 	"go.opentelemetry.io/otel/log"
 )
 
+// Debug emits a debug log using OpenTelemetry logging.
 func Debug(ctx context.Context, logger log.Logger, msg string, attrs ...log.KeyValue) {
-
 	if getLogLevelFromEnv() > log.SeverityDebug {
 		return
 	}
@@ -22,8 +23,8 @@ func Debug(ctx context.Context, logger log.Logger, msg string, attrs ...log.KeyV
 	logger.Emit(ctx, record)
 }
 
+// Trace emits a trace log using OpenTelemetry logging.
 func Trace(ctx context.Context, logger log.Logger, msg string, attrs ...log.KeyValue) {
-
 	if getLogLevelFromEnv() > log.SeverityTrace {
 		return
 	}
@@ -39,7 +40,6 @@ func Trace(ctx context.Context, logger log.Logger, msg string, attrs ...log.KeyV
 
 // Info emits an info log using OpenTelemetry logging
 func Info(ctx context.Context, logger log.Logger, msg string, attrs ...log.KeyValue) {
-
 	if getLogLevelFromEnv() > log.SeverityInfo {
 		return
 	}
@@ -55,7 +55,6 @@ func Info(ctx context.Context, logger log.Logger, msg string, attrs ...log.KeyVa
 
 // Warn emits a warning log using OpenTelemetry logging
 func Warn(ctx context.Context, logger log.Logger, msg string, attrs ...log.KeyValue) {
-
 	if getLogLevelFromEnv() > log.SeverityWarn {
 		return
 	}
@@ -80,27 +79,32 @@ func Error(ctx context.Context, logger log.Logger, msg string, attrs ...log.KeyV
 	logger.Emit(ctx, record)
 }
 
-// Helper functions to create log attributes
+// String creates a string-valued log attribute.
 func String(key, value string) log.KeyValue {
 	return log.KeyValue{Key: key, Value: log.StringValue(value)}
 }
 
+// Int creates an integer-valued log attribute.
 func Int(key string, value int) log.KeyValue {
 	return log.KeyValue{Key: key, Value: log.Int64Value(int64(value))}
 }
 
+// Int64 creates an int64-valued log attribute.
 func Int64(key string, value int64) log.KeyValue {
 	return log.KeyValue{Key: key, Value: log.Int64Value(value)}
 }
 
+// Float64 creates a float64-valued log attribute.
 func Float64(key string, value float64) log.KeyValue {
 	return log.KeyValue{Key: key, Value: log.Float64Value(value)}
 }
 
+// Bool creates a boolean-valued log attribute.
 func Bool(key string, value bool) log.KeyValue {
 	return log.KeyValue{Key: key, Value: log.BoolValue(value)}
 }
 
+// Err creates an error log attribute with key "error".
 func Err(err error) log.KeyValue {
 	return log.KeyValue{Key: "error", Value: log.StringValue(err.Error())}
 }

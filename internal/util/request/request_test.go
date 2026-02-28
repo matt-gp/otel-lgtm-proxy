@@ -1,4 +1,5 @@
-package httputil
+// Package request provides utility functions for working with HTTP requests in the context of the otel-lgtm-proxy application.
+package request
 
 import (
 	"net/http/httptest"
@@ -103,7 +104,12 @@ func TestAddHeaders(t *testing.T) {
 			for key, expectedValue := range tt.want {
 				actualValue := req.Header.Get(key)
 				if actualValue != expectedValue {
-					t.Errorf("AddHeaders() header[%s] = %v, want %v", key, actualValue, expectedValue)
+					t.Errorf(
+						"AddHeaders() header[%s] = %v, want %v",
+						key,
+						actualValue,
+						expectedValue,
+					)
 				}
 			}
 		})

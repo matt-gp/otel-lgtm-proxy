@@ -1,12 +1,12 @@
-package certutil
+// Package cert provides common utility functions for TLS certificate management.
+package cert
 
 import (
 	"crypto/tls"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
-
 	"github.com/matt-gp/otel-lgtm-proxy/internal/config"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestTLSEnabled(t *testing.T) {
@@ -164,8 +164,8 @@ func TestCreateTLSConfig(t *testing.T) {
 				Address: "https://localhost:8443",
 				Timeout: 30,
 				TLS: config.TLSConfig{
-					CertFile:       "testdata/cert.pem", // This would need to exist for this test
-					KeyFile:        "testdata/key.pem",  // This would need to exist for this test
+					CertFile:       "testdata/cert.pem",
+					KeyFile:        "testdata/key.pem",
 					CAFile:         "nonexistent.ca",
 					ClientAuthType: "NoClientCert",
 				},

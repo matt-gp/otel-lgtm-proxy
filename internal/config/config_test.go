@@ -116,20 +116,20 @@ func TestParse_AllValues(t *testing.T) {
 	}
 
 	// HTTP Listener
-	if cfg.Http.Address != ":9090" {
-		t.Errorf("Http.Address = %v, want :9090", cfg.Http.Address)
+	if cfg.HTTP.Address != ":9090" {
+		t.Errorf("HTTP.Address = %v, want :9090", cfg.HTTP.Address)
 	}
-	if cfg.Http.Timeout != 10*time.Second {
-		t.Errorf("Http.Timeout = %v, want 10s", cfg.Http.Timeout)
+	if cfg.HTTP.Timeout != 10*time.Second {
+		t.Errorf("HTTP.Timeout = %v, want 10s", cfg.HTTP.Timeout)
 	}
-	if cfg.Http.TLS.CertFile != "/certs/server.crt" {
-		t.Errorf("Http.TLS.CertFile = %v, want /certs/server.crt", cfg.Http.TLS.CertFile)
+	if cfg.HTTP.TLS.CertFile != "/certs/server.crt" {
+		t.Errorf("HTTP.TLS.CertFile = %v, want /certs/server.crt", cfg.HTTP.TLS.CertFile)
 	}
-	if cfg.Http.TLS.KeyFile != "/certs/server.key" {
-		t.Errorf("Http.TLS.KeyFile = %v, want /certs/server.key", cfg.Http.TLS.KeyFile)
+	if cfg.HTTP.TLS.KeyFile != "/certs/server.key" {
+		t.Errorf("HTTP.TLS.KeyFile = %v, want /certs/server.key", cfg.HTTP.TLS.KeyFile)
 	}
-	if cfg.Http.TLS.CAFile != "/certs/server-ca.crt" {
-		t.Errorf("Http.TLS.CAFile = %v, want /certs/server-ca.crt", cfg.Http.TLS.CAFile)
+	if cfg.HTTP.TLS.CAFile != "/certs/server-ca.crt" {
+		t.Errorf("HTTP.TLS.CAFile = %v, want /certs/server-ca.crt", cfg.HTTP.TLS.CAFile)
 	}
 
 	// Tenant
@@ -175,7 +175,10 @@ func TestParse_AllValues(t *testing.T) {
 		t.Errorf("Logs.TLS.CAFile = %v, want /certs/logs-ca.crt", cfg.Logs.TLS.CAFile)
 	}
 	if cfg.Logs.TLS.ClientAuthType != "RequireAndVerifyClientCert" {
-		t.Errorf("Logs.TLS.ClientAuthType = %v, want RequireAndVerifyClientCert", cfg.Logs.TLS.ClientAuthType)
+		t.Errorf(
+			"Logs.TLS.ClientAuthType = %v, want RequireAndVerifyClientCert",
+			cfg.Logs.TLS.ClientAuthType,
+		)
 	}
 	if cfg.Logs.TLS.InsecureSkipVerify != true {
 		t.Errorf("Logs.TLS.InsecureSkipVerify = %v, want true", cfg.Logs.TLS.InsecureSkipVerify)
@@ -183,7 +186,10 @@ func TestParse_AllValues(t *testing.T) {
 
 	// Metrics endpoint
 	if cfg.Metrics.Address != "https://mimir.example.com/otlp/v1/metrics" {
-		t.Errorf("Metrics.Address = %v, want https://mimir.example.com/otlp/v1/metrics", cfg.Metrics.Address)
+		t.Errorf(
+			"Metrics.Address = %v, want https://mimir.example.com/otlp/v1/metrics",
+			cfg.Metrics.Address,
+		)
 	}
 	if cfg.Metrics.Timeout != 90*time.Second {
 		t.Errorf("Metrics.Timeout = %v, want 90s", cfg.Metrics.Timeout)
@@ -192,15 +198,24 @@ func TestParse_AllValues(t *testing.T) {
 		t.Errorf("Metrics.Headers = %v, want X-Custom=value", cfg.Metrics.Headers)
 	}
 	if cfg.Metrics.TLS.CertFile != "/certs/metrics-client.crt" {
-		t.Errorf("Metrics.TLS.CertFile = %v, want /certs/metrics-client.crt", cfg.Metrics.TLS.CertFile)
+		t.Errorf(
+			"Metrics.TLS.CertFile = %v, want /certs/metrics-client.crt",
+			cfg.Metrics.TLS.CertFile,
+		)
 	}
 	if cfg.Metrics.TLS.KeyFile != "/certs/metrics-client.key" {
-		t.Errorf("Metrics.TLS.KeyFile = %v, want /certs/metrics-client.key", cfg.Metrics.TLS.KeyFile)
+		t.Errorf(
+			"Metrics.TLS.KeyFile = %v, want /certs/metrics-client.key",
+			cfg.Metrics.TLS.KeyFile,
+		)
 	}
 
 	// Traces endpoint
 	if cfg.Traces.Address != "https://tempo.example.com/v1/traces" {
-		t.Errorf("Traces.Address = %v, want https://tempo.example.com/v1/traces", cfg.Traces.Address)
+		t.Errorf(
+			"Traces.Address = %v, want https://tempo.example.com/v1/traces",
+			cfg.Traces.Address,
+		)
 	}
 	if cfg.Traces.Timeout != 120*time.Second {
 		t.Errorf("Traces.Timeout = %v, want 120s", cfg.Traces.Timeout)
@@ -209,6 +224,9 @@ func TestParse_AllValues(t *testing.T) {
 		t.Errorf("Traces.TLS.CAFile = %v, want /certs/traces-ca.crt", cfg.Traces.TLS.CAFile)
 	}
 	if cfg.Traces.TLS.InsecureSkipVerify != false {
-		t.Errorf("Traces.TLS.InsecureSkipVerify = %v, want false", cfg.Traces.TLS.InsecureSkipVerify)
+		t.Errorf(
+			"Traces.TLS.InsecureSkipVerify = %v, want false",
+			cfg.Traces.TLS.InsecureSkipVerify,
+		)
 	}
 }

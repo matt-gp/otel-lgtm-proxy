@@ -1,3 +1,4 @@
+// Package otel provides OpenTelemetry provider initialization and configuration.
 package otel
 
 import (
@@ -26,6 +27,16 @@ import (
 	semconv "go.opentelemetry.io/otel/semconv/v1.21.0"
 )
 
+const (
+	exporterConsole      = "console"
+	exporterNone         = "none"
+	exporterOTLP         = "otlp"
+	protocolHTTPProtobuf = "http/protobuf"
+	protocolHTTP         = "http"
+	protocolGRPC         = "grpc"
+)
+
+// Provider holds the OpenTelemetry providers for tracing, metrics, and logging.
 type Provider struct {
 	TracerProvider *trace.TracerProvider
 	MeterProvider  *metric.MeterProvider
@@ -105,6 +116,7 @@ func NewProvider(config config.Config) (*Provider, error) {
 	return provider, nil
 }
 
+// Shutdown gracefully shuts down all OpenTelemetry providers.
 func (p *Provider) Shutdown(ctx context.Context) error {
 	var errs []error
 
@@ -136,11 +148,11 @@ func (p *Provider) Shutdown(ctx context.Context) error {
 func (p *Provider) initLogging(res *resource.Resource) error {
 	exporter := os.Getenv("OTEL_LOGS_EXPORTER")
 	if exporter == "" {
-		exporter = "console" // Default to console
+		exporter = exporterConsole // Default to console
 	}
 
 	// Skip if logs are disabled - but still create a no-op provider
-	if exporter == "none" {
+	if exporter == exporterNone {
 		// Create a no-op logger provider for when logging is disabled
 		p.LoggerProvider = log.NewLoggerProvider(
 			log.WithResource(res),
@@ -160,14 +172,14 @@ func (p *Provider) initLogging(res *resource.Resource) error {
 		}
 
 		switch protocol {
-		case "http/protobuf", "http":
+		case protocolHTTPProtobuf, protocolHTTP:
 			logExporter, err = otlploghttp.New(context.Background())
-		case "grpc":
+		case protocolGRPC:
 			logExporter, err = otlploggrpc.New(context.Background())
 		default:
 			return fmt.Errorf("unsupported OTLP protocol: %q", protocol)
 		}
-	case "console":
+	case exporterConsole:
 		logExporter, err = stdoutlog.New()
 	default:
 		return fmt.Errorf("unknown logs exporter: %q", exporter)
@@ -189,11 +201,11 @@ func (p *Provider) initLogging(res *resource.Resource) error {
 func (p *Provider) initMetrics(res *resource.Resource) error {
 	exporter := os.Getenv("OTEL_METRICS_EXPORTER")
 	if exporter == "" {
-		exporter = "console" // Default to console
+		exporter = exporterConsole // Default to console
 	}
 
 	// Skip if metrics are disabled
-	if exporter == "none" {
+	if exporter == exporterNone {
 		return nil
 	}
 
@@ -201,20 +213,20 @@ func (p *Provider) initMetrics(res *resource.Resource) error {
 	var err error
 
 	switch exporter {
-	case "otlp":
+	case exporterOTLP:
 		// Check protocol preference - HTTP or gRPC
 		protocol := os.Getenv("OTEL_EXPORTER_OTLP_PROTOCOL")
 		if protocol == "" {
-			protocol = "http/protobuf" // Default to HTTP with protobuf to avoid trace ID encoding issues
+			protocol = protocolHTTPProtobuf // Default to HTTP with protobuf to avoid trace ID encoding issues
 		}
 
 		var metricExporter metric.Exporter
 		switch protocol {
-		case "http/protobuf", "http":
+		case protocolHTTPProtobuf, protocolHTTP:
 			metricExporter, err = otlpmetrichttp.New(context.Background(),
 				otlpmetrichttp.WithTemporalitySelector(metric.DefaultTemporalitySelector),
 			)
-		case "grpc":
+		case protocolGRPC:
 			metricExporter, err = otlpmetricgrpc.New(context.Background(),
 				otlpmetricgrpc.WithTemporalitySelector(metric.DefaultTemporalitySelector),
 			)
@@ -227,7 +239,7 @@ func (p *Provider) initMetrics(res *resource.Resource) error {
 		}
 		// Periodic reader automatically configures interval from OTEL_METRIC_EXPORT_INTERVAL
 		reader = metric.NewPeriodicReader(metricExporter)
-	case "console":
+	case exporterConsole:
 		metricExporter, err := stdoutmetric.New()
 		if err != nil {
 			return err
@@ -253,11 +265,11 @@ func (p *Provider) initMetrics(res *resource.Resource) error {
 func (p *Provider) initTracing(res *resource.Resource) error {
 	exporter := os.Getenv("OTEL_TRACES_EXPORTER")
 	if exporter == "" {
-		exporter = "console" // Default to console
+		exporter = exporterConsole // Default to console
 	}
 
 	// Skip if traces are disabled
-	if exporter == "none" {
+	if exporter == exporterNone {
 		return nil
 	}
 
@@ -265,22 +277,22 @@ func (p *Provider) initTracing(res *resource.Resource) error {
 	var err error
 
 	switch exporter {
-	case "otlp":
+	case exporterOTLP:
 		// Check protocol preference - HTTP or gRPC
 		protocol := os.Getenv("OTEL_EXPORTER_OTLP_PROTOCOL")
 		if protocol == "" {
-			protocol = "http/protobuf" // Default to HTTP with protobuf to avoid trace ID encoding issues
+			protocol = protocolHTTPProtobuf // Default to HTTP with protobuf to avoid trace ID encoding issues
 		}
 
 		switch protocol {
-		case "http/protobuf", "http":
+		case protocolHTTPProtobuf, protocolHTTP:
 			traceExporter, err = otlptracehttp.New(context.Background())
-		case "grpc":
+		case protocolGRPC:
 			traceExporter, err = otlptracegrpc.New(context.Background())
 		default:
 			return fmt.Errorf("unsupported OTLP protocol: %q", protocol)
 		}
-	case "console":
+	case exporterConsole:
 		traceExporter, err = stdouttrace.New(stdouttrace.WithPrettyPrint())
 	default:
 		return fmt.Errorf("unknown traces exporter: %q", exporter)

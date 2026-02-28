@@ -225,18 +225,19 @@ internal/
 ├── otel/                     # OpenTelemetry provider setup
 │   ├── otel.go              # Provider initialization and configuration
 │   └── otel_test.go         # Provider tests
-├── logs/                     # Log telemetry processing
-│   ├── logs.go              # Log handler, partitioning, and forwarding
-│   └── logs_test.go         # Comprehensive table-driven tests
-├── metrics/                  # Metric telemetry processing
-│   ├── metrics.go           # Metric handler, partitioning, and forwarding
-│   └── metrics_test.go      # Comprehensive table-driven tests
-├── traces/                   # Trace telemetry processing
-│   ├── traces.go            # Trace handler, partitioning, and forwarding
-│   └── traces_test.go       # Comprehensive table-driven tests
-├── certutil/                 # TLS certificate utilities
-│   ├── cert_helpers.go      # TLS configuration helpers
-│   └── cert_helpers_test.go # TLS tests
+├── otellogs/                 # Log telemetry processing
+│   ├── otellogs.go          # Log handler, partitioning, and forwarding
+│   └── otellogs_test.go     # Comprehensive table-driven tests
+├── otelmetrics/              # Metric telemetry processing
+│   ├── otelmetrics.go       # Metric handler, partitioning, and forwarding
+│   └── otelmetrics_test.go  # Comprehensive table-driven tests
+├── oteltraces/               # Trace telemetry processing
+│   ├── oteltraces.go        # Trace handler, partitioning, and forwarding
+│   └── oteltraces_test.go   # Comprehensive table-driven tests
+├── util/                     # Utility packages
+│   ├── cert/                # TLS certificate utilities
+│   ├── proto/              # Protobuf utilities
+│   └── request/            # HTTP request utilities
 └── logger/                   # Structured logging utilities
     ├── logger.go            # Logging helpers
     └── logger_test.go       # Logging tests
@@ -247,29 +248,31 @@ internal/
 - **`cmd/`**: Application bootstrapping and dependency injection
 - **`internal/config/`**: Environment-based configuration with validation
 - **`internal/otel/`**: OpenTelemetry provider setup with protocol configuration
-- **`internal/logs/`**: OTLP log processing with tenant partitioning and forwarding to Loki
-- **`internal/metrics/`**: OTLP metric processing with temporality handling for Mimir
-- **`internal/traces/`**: OTLP trace processing with correlation support for Tempo
-- **`internal/certutil/`**: TLS configuration and certificate management
+- **`internal/otellogs/`**: OTLP log processing with tenant partitioning and forwarding to Loki
+- **`internal/otelmetrics/`**: OTLP metric processing with temporality handling for Mimir
+- **`internal/oteltraces/`**: OTLP trace processing with correlation support for Tempo
+- **`internal/util/cert/`**: TLS configuration and certificate management
+- **`internal/util/proto/`**: Protobuf utility functions
+- **`internal/util/request/`**: HTTP request utility functions
 - **`internal/logger/`**: Structured logging with OpenTelemetry integration
 
 ### Key Functions Per Package
 
-**Logs Package (`internal/logs/`):**
+**Logs Package (`internal/otellogs/`):**
 - `New()` - Create logs processor with HTTP client and observability metrics
 - `Handler()` - HTTP handler for `/v1/logs` endpoint
 - `partition()` - Partition logs by tenant from resource attributes
 - `dispatch()` - Concurrent forwarding to backend with tenant headers
 - `send()` - HTTP client with protobuf marshaling and Loki-compatible headers
 
-**Metrics Package (`internal/metrics/`):**
+**Metrics Package (`internal/otelmetrics/`):**
 - `New()` - Create metrics processor with HTTP client and observability metrics
 - `Handler()` - HTTP handler for `/v1/metrics` endpoint  
 - `partition()` - Partition metrics by tenant from resource attributes
 - `dispatch()` - Concurrent forwarding to backend with tenant headers
 - `send()` - HTTP client with protobuf marshaling and Mimir-compatible headers
 
-**Traces Package (`internal/traces/`):**
+**Traces Package (`internal/oteltraces/`):**
 - `New()` - Create traces processor with HTTP client and observability metrics
 - `Handler()` - HTTP handler for `/v1/traces` endpoint
 - `partition()` - Partition traces by tenant from resource attributes
@@ -502,9 +505,9 @@ TENANT_DEFAULT=shared
 ### Partitioning Functions
 
 Each domain package implements tenant-specific partitioning:
-- **`logs.partition()`** - Groups log records by tenant from resource attributes
-- **`metrics.partition()`** - Groups metric records by tenant from resource attributes
-- **`traces.partition()`** - Groups span records by tenant from resource attributes
+- **`otellogs.partition()`** - Groups log records by tenant from resource attributes
+- **`otelmetrics.partition()`** - Groups metric records by tenant from resource attributes
+- **`oteltraces.partition()`** - Groups span records by tenant from resource attributes
 
 The partitioning logic ensures proper tenant isolation by:
 - Examining each resource's attributes

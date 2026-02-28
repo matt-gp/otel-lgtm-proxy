@@ -1,4 +1,5 @@
-package certutil
+// Package cert provides common utility functions for TLS certificate management.
+package cert
 
 import (
 	"crypto/tls"
@@ -8,10 +9,12 @@ import (
 	"github.com/matt-gp/otel-lgtm-proxy/internal/config"
 )
 
+// TLSEnabled returns true if all required TLS configuration fields are set.
 func TLSEnabled(cfg *config.TLSConfig) bool {
 	return cfg.CertFile != "" && cfg.KeyFile != "" && cfg.CAFile != ""
 }
 
+// StringClientAuthType converts a string representation of client auth type to tls.ClientAuthType.
 func StringClientAuthType(clientAuthType string) tls.ClientAuthType {
 	switch clientAuthType {
 	case "RequestClientCert":
@@ -27,8 +30,8 @@ func StringClientAuthType(clientAuthType string) tls.ClientAuthType {
 	}
 }
 
+// CreateTLSConfig creates a TLS configuration from an endpoint configuration.
 func CreateTLSConfig(config *config.Endpoint) (*tls.Config, error) {
-
 	certs, err := tls.LoadX509KeyPair(config.TLS.CertFile, config.TLS.KeyFile)
 	if err != nil {
 		return nil, err
@@ -46,5 +49,6 @@ func CreateTLSConfig(config *config.Endpoint) (*tls.Config, error) {
 		Certificates: []tls.Certificate{certs},
 		RootCAs:      caPool,
 		ClientAuth:   StringClientAuthType(config.TLS.ClientAuthType),
+		MinVersion:   tls.VersionTLS13,
 	}, nil
 }
