@@ -12,7 +12,7 @@ type Config struct {
 	Service         Service       `envPrefix:"OTEL_SERVICE_"`
 	TimeoutShutdown time.Duration `env:"TIMEOUT_SHUTDOWN" envDefault:"15s"`
 
-	Http   Endpoint `envPrefix:"HTTP_LISTEN_"`
+	HTTP   Endpoint `envPrefix:"HTTP_LISTEN_"`
 	Tenant Tenant   `envPrefix:"TENANT_"`
 
 	Logs    Endpoint `envPrefix:"OLP_LOGS_"`
@@ -20,8 +20,9 @@ type Config struct {
 	Traces  Endpoint `envPrefix:"OLP_TRACES_"`
 }
 
+// Service represents the service name and version configuration.
 type Service struct {
-	Name    string `env:"NAME" envDefault:"otel-lgtm-proxy"`
+	Name    string `env:"NAME"    envDefault:"otel-lgtm-proxy"`
 	Version string `env:"VERSION" envDefault:"1.0.0"`
 }
 
@@ -30,24 +31,24 @@ type Endpoint struct {
 	Address string        `env:"ADDRESS"`
 	Headers string        `env:"HEADERS" envDefault:""`
 	Timeout time.Duration `env:"TIMEOUT" envDefault:"15s"`
-	TLS     TLSConfig     `envPrefix:"TLS_"`
+	TLS     TLSConfig     `                               envPrefix:"TLS_"`
 }
 
 // TLSConfig represents the configuration for TLS.
 type TLSConfig struct {
-	CertFile           string `env:"CERT_FILE" envDefault:""`
-	KeyFile            string `env:"KEY_FILE" envDefault:""`
-	CAFile             string `env:"CA_FILE" envDefault:""`
-	ClientAuthType     string `env:"CLIENT_AUTH_TYPE" envDefault:"NoClientCert"`
+	CertFile           string `env:"CERT_FILE"            envDefault:""`
+	KeyFile            string `env:"KEY_FILE"             envDefault:""`
+	CAFile             string `env:"CA_FILE"              envDefault:""`
+	ClientAuthType     string `env:"CLIENT_AUTH_TYPE"     envDefault:"NoClientCert"`
 	InsecureSkipVerify bool   `env:"INSECURE_SKIP_VERIFY" envDefault:"false"`
 }
 
 // Tenant represents the configuration for a tenant.
 type Tenant struct {
-	Label   string   `env:"LABEL" envDefault:"tenant.id"`
-	Labels  []string `env:"LABELS" envDefault:""`
-	Format  string   `env:"FORMAT" envDefault:"%s"`
-	Header  string   `env:"HEADER" envDefault:"X-Scope-OrgID"`
+	Label   string   `env:"LABEL"   envDefault:"tenant.id"`
+	Labels  []string `env:"LABELS"  envDefault:""`
+	Format  string   `env:"FORMAT"  envDefault:"%s"`
+	Header  string   `env:"HEADER"  envDefault:"X-Scope-OrgID"`
 	Default string   `env:"DEFAULT" envDefault:"default"`
 }
 

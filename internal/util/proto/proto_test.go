@@ -1,4 +1,5 @@
-package protoutil
+// Package proto provides utility functions for working with protobuf messages in the context of HTTP requests and responses.
+package proto
 
 import (
 	"bytes"

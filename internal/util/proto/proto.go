@@ -1,4 +1,5 @@
-package protoutil
+// Package proto provides utility functions for working with protobuf messages in the context of HTTP requests and responses.
+package proto
 
 import (
 	"io"
@@ -16,7 +17,6 @@ func Marshal(payload any) ([]byte, error) {
 
 // Unmarshal unmarshals the request.
 func Unmarshal(req *http.Request, targetType reflect.Type) (any, error) {
-
 	// Create a new instance of the target type
 	target := reflect.New(targetType.Elem()).Interface().(proto.Message)
 

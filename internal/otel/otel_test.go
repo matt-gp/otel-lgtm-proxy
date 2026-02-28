@@ -41,13 +41,19 @@ func TestNewProvider(t *testing.T) {
 			wantErr: false,
 			checkFunc: func(t *testing.T, p *Provider) {
 				if p.TracerProvider == nil {
-					t.Error("Expected tracer provider to be initialized with default console exporter")
+					t.Error(
+						"Expected tracer provider to be initialized with default console exporter",
+					)
 				}
 				if p.MeterProvider == nil {
-					t.Error("Expected meter provider to be initialized with default console exporter")
+					t.Error(
+						"Expected meter provider to be initialized with default console exporter",
+					)
 				}
 				if p.LoggerProvider == nil {
-					t.Error("Expected logger provider to be initialized with default console exporter")
+					t.Error(
+						"Expected logger provider to be initialized with default console exporter",
+					)
 				}
 			},
 		},
@@ -89,7 +95,9 @@ func TestNewProvider(t *testing.T) {
 					t.Error("Expected meter provider to be nil when metrics exporter is 'none'")
 				}
 				if p.LoggerProvider == nil {
-					t.Error("Expected logger provider to be initialized as no-op when logs exporter is 'none'")
+					t.Error(
+						"Expected logger provider to be initialized as no-op when logs exporter is 'none'",
+					)
 				}
 			},
 		},

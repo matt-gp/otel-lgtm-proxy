@@ -1,4 +1,5 @@
-package httputil
+// Package request provides utility functions for working with HTTP requests in the context of the otel-lgtm-proxy application.
+package request
 
 import (
 	"fmt"
