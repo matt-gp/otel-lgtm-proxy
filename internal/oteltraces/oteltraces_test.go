@@ -1,4 +1,4 @@
-package traces
+package oteltraces
 
 import (
 	"bytes"
@@ -15,14 +15,12 @@ import (
 	"go.opentelemetry.io/otel/log/noop"
 	metricnoop "go.opentelemetry.io/otel/metric/noop"
 	tracenoop "go.opentelemetry.io/otel/trace/noop"
-	v1 "go.opentelemetry.io/proto/otlp/common/v1"
+	common "go.opentelemetry.io/proto/otlp/common/v1"
 	resourcepb "go.opentelemetry.io/proto/otlp/resource/v1"
 	tracepb "go.opentelemetry.io/proto/otlp/trace/v1"
 	"go.uber.org/mock/gomock"
 	"google.golang.org/protobuf/proto"
 )
-
-//go:generate mockgen -package traces -source traces.go -destination traces_mock.go
 
 func TestNew(t *testing.T) {
 	tests := []struct {
@@ -97,11 +95,11 @@ func TestHandler(t *testing.T) {
 		ResourceSpans: []*tracepb.ResourceSpans{
 			{
 				Resource: &resourcepb.Resource{
-					Attributes: []*v1.KeyValue{
+					Attributes: []*common.KeyValue{
 						{
 							Key: "tenant.id",
-							Value: &v1.AnyValue{
-								Value: &v1.AnyValue_StringValue{StringValue: "tenant1"},
+							Value: &common.AnyValue{
+								Value: &common.AnyValue_StringValue{StringValue: "tenant1"},
 							},
 						},
 					},
@@ -192,7 +190,10 @@ func TestHandler(t *testing.T) {
 
 			mockClient := NewMockClient(ctrl)
 			if tt.clientResponse != nil || tt.clientError != nil {
-				mockClient.EXPECT().Do(gomock.Any()).Return(tt.clientResponse, tt.clientError).AnyTimes()
+				mockClient.EXPECT().
+					Do(gomock.Any()).
+					Return(tt.clientResponse, tt.clientError).
+					AnyTimes()
 			}
 
 			logger := noop.NewLoggerProvider().Logger("test")
@@ -236,11 +237,11 @@ func TestPartition(t *testing.T) {
 				ResourceSpans: []*tracepb.ResourceSpans{
 					{
 						Resource: &resourcepb.Resource{
-							Attributes: []*v1.KeyValue{
+							Attributes: []*common.KeyValue{
 								{
 									Key: "tenant.id",
-									Value: &v1.AnyValue{
-										Value: &v1.AnyValue_StringValue{StringValue: "tenant1"},
+									Value: &common.AnyValue{
+										Value: &common.AnyValue_StringValue{StringValue: "tenant1"},
 									},
 								},
 							},
@@ -258,11 +259,11 @@ func TestPartition(t *testing.T) {
 				ResourceSpans: []*tracepb.ResourceSpans{
 					{
 						Resource: &resourcepb.Resource{
-							Attributes: []*v1.KeyValue{
+							Attributes: []*common.KeyValue{
 								{
 									Key: "tenant.id",
-									Value: &v1.AnyValue{
-										Value: &v1.AnyValue_StringValue{StringValue: "tenant1"},
+									Value: &common.AnyValue{
+										Value: &common.AnyValue_StringValue{StringValue: "tenant1"},
 									},
 								},
 							},
@@ -270,11 +271,11 @@ func TestPartition(t *testing.T) {
 					},
 					{
 						Resource: &resourcepb.Resource{
-							Attributes: []*v1.KeyValue{
+							Attributes: []*common.KeyValue{
 								{
 									Key: "tenant.id",
-									Value: &v1.AnyValue{
-										Value: &v1.AnyValue_StringValue{StringValue: "tenant2"},
+									Value: &common.AnyValue{
+										Value: &common.AnyValue_StringValue{StringValue: "tenant2"},
 									},
 								},
 							},
@@ -282,11 +283,11 @@ func TestPartition(t *testing.T) {
 					},
 					{
 						Resource: &resourcepb.Resource{
-							Attributes: []*v1.KeyValue{
+							Attributes: []*common.KeyValue{
 								{
 									Key: "tenant.id",
-									Value: &v1.AnyValue{
-										Value: &v1.AnyValue_StringValue{StringValue: "tenant1"},
+									Value: &common.AnyValue{
+										Value: &common.AnyValue_StringValue{StringValue: "tenant1"},
 									},
 								},
 							},
@@ -305,11 +306,11 @@ func TestPartition(t *testing.T) {
 				ResourceSpans: []*tracepb.ResourceSpans{
 					{
 						Resource: &resourcepb.Resource{
-							Attributes: []*v1.KeyValue{
+							Attributes: []*common.KeyValue{
 								{
 									Key: "tenant_id",
-									Value: &v1.AnyValue{
-										Value: &v1.AnyValue_StringValue{StringValue: "tenant1"},
+									Value: &common.AnyValue{
+										Value: &common.AnyValue_StringValue{StringValue: "tenant1"},
 									},
 								},
 							},
@@ -317,11 +318,11 @@ func TestPartition(t *testing.T) {
 					},
 					{
 						Resource: &resourcepb.Resource{
-							Attributes: []*v1.KeyValue{
+							Attributes: []*common.KeyValue{
 								{
 									Key: "tenantId",
-									Value: &v1.AnyValue{
-										Value: &v1.AnyValue_StringValue{StringValue: "tenant2"},
+									Value: &common.AnyValue{
+										Value: &common.AnyValue_StringValue{StringValue: "tenant2"},
 									},
 								},
 							},
@@ -340,11 +341,11 @@ func TestPartition(t *testing.T) {
 				ResourceSpans: []*tracepb.ResourceSpans{
 					{
 						Resource: &resourcepb.Resource{
-							Attributes: []*v1.KeyValue{
+							Attributes: []*common.KeyValue{
 								{
 									Key: "tenant_id",
-									Value: &v1.AnyValue{
-										Value: &v1.AnyValue_StringValue{StringValue: "tenant2"},
+									Value: &common.AnyValue{
+										Value: &common.AnyValue_StringValue{StringValue: "tenant2"},
 									},
 								},
 							},
@@ -352,11 +353,11 @@ func TestPartition(t *testing.T) {
 					},
 					{
 						Resource: &resourcepb.Resource{
-							Attributes: []*v1.KeyValue{
+							Attributes: []*common.KeyValue{
 								{
 									Key: "tenantId",
-									Value: &v1.AnyValue{
-										Value: &v1.AnyValue_StringValue{StringValue: "tenant3"},
+									Value: &common.AnyValue{
+										Value: &common.AnyValue_StringValue{StringValue: "tenant3"},
 									},
 								},
 							},
@@ -364,11 +365,11 @@ func TestPartition(t *testing.T) {
 					},
 					{
 						Resource: &resourcepb.Resource{
-							Attributes: []*v1.KeyValue{
+							Attributes: []*common.KeyValue{
 								{
 									Key: "tenant.id",
-									Value: &v1.AnyValue{
-										Value: &v1.AnyValue_StringValue{StringValue: "tenant1"},
+									Value: &common.AnyValue{
+										Value: &common.AnyValue_StringValue{StringValue: "tenant1"},
 									},
 								},
 							},
@@ -388,11 +389,11 @@ func TestPartition(t *testing.T) {
 				ResourceSpans: []*tracepb.ResourceSpans{
 					{
 						Resource: &resourcepb.Resource{
-							Attributes: []*v1.KeyValue{
+							Attributes: []*common.KeyValue{
 								{
 									Key: "service.name",
-									Value: &v1.AnyValue{
-										Value: &v1.AnyValue_StringValue{StringValue: "my-service"},
+									Value: &common.AnyValue{
+										Value: &common.AnyValue_StringValue{StringValue: "my-service"},
 									},
 								},
 							},

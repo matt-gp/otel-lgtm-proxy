@@ -1,4 +1,4 @@
-package metrics
+package otellogs
 
 import (
 	"bytes"
@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -14,14 +15,12 @@ import (
 	"go.opentelemetry.io/otel/log/noop"
 	metricnoop "go.opentelemetry.io/otel/metric/noop"
 	tracenoop "go.opentelemetry.io/otel/trace/noop"
-	v1 "go.opentelemetry.io/proto/otlp/common/v1"
-	metricpb "go.opentelemetry.io/proto/otlp/metrics/v1"
+	common "go.opentelemetry.io/proto/otlp/common/v1"
+	logpb "go.opentelemetry.io/proto/otlp/logs/v1"
 	resourcepb "go.opentelemetry.io/proto/otlp/resource/v1"
 	"go.uber.org/mock/gomock"
 	"google.golang.org/protobuf/proto"
 )
-
-//go:generate mockgen -package metrics -source metrics.go -destination metrics_mock.go
 
 func TestNew(t *testing.T) {
 	tests := []struct {
@@ -34,7 +33,7 @@ func TestNew(t *testing.T) {
 		{
 			name: "successful creation without TLS",
 			config: &config.Config{
-				Metrics: config.Endpoint{
+				Logs: config.Endpoint{
 					Timeout: 30 * time.Second,
 				},
 			},
@@ -44,7 +43,7 @@ func TestNew(t *testing.T) {
 		{
 			name: "successful creation with TLS disabled",
 			config: &config.Config{
-				Metrics: config.Endpoint{
+				Logs: config.Endpoint{
 					Timeout: 30 * time.Second,
 					TLS:     config.TLSConfig{},
 				},
@@ -91,29 +90,27 @@ func TestNew(t *testing.T) {
 }
 
 func TestHandler(t *testing.T) {
-	// Create test metrics data
-	metricsData := &metricpb.MetricsData{
-		ResourceMetrics: []*metricpb.ResourceMetrics{
+	// Create test logs data
+	logsData := &logpb.LogsData{
+		ResourceLogs: []*logpb.ResourceLogs{
 			{
 				Resource: &resourcepb.Resource{
-					Attributes: []*v1.KeyValue{
+					Attributes: []*common.KeyValue{
 						{
 							Key: "tenant.id",
-							Value: &v1.AnyValue{
-								Value: &v1.AnyValue_StringValue{StringValue: "tenant1"},
+							Value: &common.AnyValue{
+								Value: &common.AnyValue_StringValue{StringValue: "tenant1"},
 							},
 						},
 					},
 				},
-				ScopeMetrics: []*metricpb.ScopeMetrics{
+				ScopeLogs: []*logpb.ScopeLogs{
 					{
-						Metrics: []*metricpb.Metric{
+						LogRecords: []*logpb.LogRecord{
 							{
-								Name: "test_counter",
-								Data: &metricpb.Metric_Sum{
-									Sum: &metricpb.Sum{
-										AggregationTemporality: metricpb.AggregationTemporality_AGGREGATION_TEMPORALITY_CUMULATIVE,
-										IsMonotonic:            true,
+								Body: &common.AnyValue{
+									Value: &common.AnyValue_StringValue{
+										StringValue: "test log message",
 									},
 								},
 							},
@@ -124,7 +121,7 @@ func TestHandler(t *testing.T) {
 		},
 	}
 
-	validBody, _ := proto.Marshal(metricsData)
+	validBody, _ := proto.Marshal(logsData)
 
 	tests := []struct {
 		name           string
@@ -152,7 +149,6 @@ func TestHandler(t *testing.T) {
 			method:     "GET",
 			body:       validBody,
 			wantStatus: http.StatusAccepted, // Handler doesn't check method, just processes body
-			wantBody:   "",
 		},
 		{
 			name:        "invalid content type",
@@ -187,33 +183,36 @@ func TestHandler(t *testing.T) {
 			defer ctrl.Finish()
 
 			cfg := &config.Config{
-				Metrics: config.Endpoint{
+				Logs: config.Endpoint{
 					Timeout: 30 * time.Second,
-					Address: "http://backend.example.com/v1/metrics",
+					Address: "http://backend.example.com/v1/logs",
 				},
 			}
 
 			mockClient := NewMockClient(ctrl)
 			if tt.clientResponse != nil || tt.clientError != nil {
-				mockClient.EXPECT().Do(gomock.Any()).Return(tt.clientResponse, tt.clientError).AnyTimes()
+				mockClient.EXPECT().
+					Do(gomock.Any()).
+					Return(tt.clientResponse, tt.clientError).
+					AnyTimes()
 			}
 
 			logger := noop.NewLoggerProvider().Logger("test")
 			meter := metricnoop.NewMeterProvider().Meter("test")
 			tracer := tracenoop.NewTracerProvider().Tracer("test")
 
-			metrics, err := New(cfg, mockClient, logger, meter, tracer)
+			logs, err := New(cfg, mockClient, logger, meter, tracer)
 			if err != nil {
-				t.Fatalf("Failed to create metrics: %v", err)
+				t.Fatalf("Failed to create logs: %v", err)
 			}
 
-			req := httptest.NewRequest(tt.method, "/v1/metrics", bytes.NewReader(tt.body))
+			req := httptest.NewRequest(tt.method, "/v1/logs", bytes.NewReader(tt.body))
 			if tt.contentType != "" {
 				req.Header.Set("Content-Type", tt.contentType)
 			}
 			w := httptest.NewRecorder()
 
-			metrics.Handler(w, req)
+			logs.Handler(w, req)
 
 			if w.Code != tt.wantStatus {
 				t.Errorf("Handler() status = %v, want %v", w.Code, tt.wantStatus)
@@ -230,20 +229,20 @@ func TestHandler(t *testing.T) {
 func TestPartition(t *testing.T) {
 	tests := []struct {
 		name     string
-		request  *metricpb.MetricsData
-		expected map[string]int // tenant -> number of resource metrics
+		request  *logpb.LogsData
+		expected map[string]int // tenant -> number of resource logs
 	}{
 		{
 			name: "single tenant",
-			request: &metricpb.MetricsData{
-				ResourceMetrics: []*metricpb.ResourceMetrics{
+			request: &logpb.LogsData{
+				ResourceLogs: []*logpb.ResourceLogs{
 					{
 						Resource: &resourcepb.Resource{
-							Attributes: []*v1.KeyValue{
+							Attributes: []*common.KeyValue{
 								{
 									Key: "tenant.id",
-									Value: &v1.AnyValue{
-										Value: &v1.AnyValue_StringValue{StringValue: "tenant1"},
+									Value: &common.AnyValue{
+										Value: &common.AnyValue_StringValue{StringValue: "tenant1"},
 									},
 								},
 							},
@@ -257,15 +256,15 @@ func TestPartition(t *testing.T) {
 		},
 		{
 			name: "multiple tenants",
-			request: &metricpb.MetricsData{
-				ResourceMetrics: []*metricpb.ResourceMetrics{
+			request: &logpb.LogsData{
+				ResourceLogs: []*logpb.ResourceLogs{
 					{
 						Resource: &resourcepb.Resource{
-							Attributes: []*v1.KeyValue{
+							Attributes: []*common.KeyValue{
 								{
 									Key: "tenant.id",
-									Value: &v1.AnyValue{
-										Value: &v1.AnyValue_StringValue{StringValue: "tenant1"},
+									Value: &common.AnyValue{
+										Value: &common.AnyValue_StringValue{StringValue: "tenant1"},
 									},
 								},
 							},
@@ -273,11 +272,11 @@ func TestPartition(t *testing.T) {
 					},
 					{
 						Resource: &resourcepb.Resource{
-							Attributes: []*v1.KeyValue{
+							Attributes: []*common.KeyValue{
 								{
 									Key: "tenant.id",
-									Value: &v1.AnyValue{
-										Value: &v1.AnyValue_StringValue{StringValue: "tenant2"},
+									Value: &common.AnyValue{
+										Value: &common.AnyValue_StringValue{StringValue: "tenant2"},
 									},
 								},
 							},
@@ -285,11 +284,11 @@ func TestPartition(t *testing.T) {
 					},
 					{
 						Resource: &resourcepb.Resource{
-							Attributes: []*v1.KeyValue{
+							Attributes: []*common.KeyValue{
 								{
 									Key: "tenant.id",
-									Value: &v1.AnyValue{
-										Value: &v1.AnyValue_StringValue{StringValue: "tenant1"},
+									Value: &common.AnyValue{
+										Value: &common.AnyValue_StringValue{StringValue: "tenant1"},
 									},
 								},
 							},
@@ -304,15 +303,15 @@ func TestPartition(t *testing.T) {
 		},
 		{
 			name: "multiple different tenant attributes",
-			request: &metricpb.MetricsData{
-				ResourceMetrics: []*metricpb.ResourceMetrics{
+			request: &logpb.LogsData{
+				ResourceLogs: []*logpb.ResourceLogs{
 					{
 						Resource: &resourcepb.Resource{
-							Attributes: []*v1.KeyValue{
+							Attributes: []*common.KeyValue{
 								{
 									Key: "tenant_id",
-									Value: &v1.AnyValue{
-										Value: &v1.AnyValue_StringValue{StringValue: "tenant1"},
+									Value: &common.AnyValue{
+										Value: &common.AnyValue_StringValue{StringValue: "tenant1"},
 									},
 								},
 							},
@@ -320,11 +319,11 @@ func TestPartition(t *testing.T) {
 					},
 					{
 						Resource: &resourcepb.Resource{
-							Attributes: []*v1.KeyValue{
+							Attributes: []*common.KeyValue{
 								{
 									Key: "tenantId",
-									Value: &v1.AnyValue{
-										Value: &v1.AnyValue_StringValue{StringValue: "tenant2"},
+									Value: &common.AnyValue{
+										Value: &common.AnyValue_StringValue{StringValue: "tenant2"},
 									},
 								},
 							},
@@ -339,15 +338,15 @@ func TestPartition(t *testing.T) {
 		},
 		{
 			name: "multiple different tenant attributes with dedicated label",
-			request: &metricpb.MetricsData{
-				ResourceMetrics: []*metricpb.ResourceMetrics{
+			request: &logpb.LogsData{
+				ResourceLogs: []*logpb.ResourceLogs{
 					{
 						Resource: &resourcepb.Resource{
-							Attributes: []*v1.KeyValue{
+							Attributes: []*common.KeyValue{
 								{
 									Key: "tenant_id",
-									Value: &v1.AnyValue{
-										Value: &v1.AnyValue_StringValue{StringValue: "tenant2"},
+									Value: &common.AnyValue{
+										Value: &common.AnyValue_StringValue{StringValue: "tenant2"},
 									},
 								},
 							},
@@ -355,11 +354,11 @@ func TestPartition(t *testing.T) {
 					},
 					{
 						Resource: &resourcepb.Resource{
-							Attributes: []*v1.KeyValue{
+							Attributes: []*common.KeyValue{
 								{
 									Key: "tenantId",
-									Value: &v1.AnyValue{
-										Value: &v1.AnyValue_StringValue{StringValue: "tenant3"},
+									Value: &common.AnyValue{
+										Value: &common.AnyValue_StringValue{StringValue: "tenant3"},
 									},
 								},
 							},
@@ -367,11 +366,11 @@ func TestPartition(t *testing.T) {
 					},
 					{
 						Resource: &resourcepb.Resource{
-							Attributes: []*v1.KeyValue{
+							Attributes: []*common.KeyValue{
 								{
 									Key: "tenant.id",
-									Value: &v1.AnyValue{
-										Value: &v1.AnyValue_StringValue{StringValue: "tenant1"},
+									Value: &common.AnyValue{
+										Value: &common.AnyValue_StringValue{StringValue: "tenant1"},
 									},
 								},
 							},
@@ -387,15 +386,15 @@ func TestPartition(t *testing.T) {
 		},
 		{
 			name: "no tenant attribute",
-			request: &metricpb.MetricsData{
-				ResourceMetrics: []*metricpb.ResourceMetrics{
+			request: &logpb.LogsData{
+				ResourceLogs: []*logpb.ResourceLogs{
 					{
 						Resource: &resourcepb.Resource{
-							Attributes: []*v1.KeyValue{
+							Attributes: []*common.KeyValue{
 								{
 									Key: "service.name",
-									Value: &v1.AnyValue{
-										Value: &v1.AnyValue_StringValue{StringValue: "my-service"},
+									Value: &common.AnyValue{
+										Value: &common.AnyValue_StringValue{StringValue: "my-service"},
 									},
 								},
 							},
@@ -412,7 +411,7 @@ func TestPartition(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := &config.Config{
-				Metrics: config.Endpoint{},
+				Logs: config.Endpoint{},
 				Tenant: config.Tenant{
 					Label:   "tenant.id",
 					Labels:  []string{"tenantId", "tenant_id"},
@@ -424,20 +423,20 @@ func TestPartition(t *testing.T) {
 			meter := metricnoop.NewMeterProvider().Meter("test")
 			tracer := tracenoop.NewTracerProvider().Tracer("test")
 
-			m, _ := New(cfg, &http.Client{}, logger, meter, tracer)
+			l, _ := New(cfg, &http.Client{}, logger, meter, tracer)
 
-			result := m.partition(context.Background(), tt.request)
+			result := l.partition(context.Background(), tt.request)
 
 			if len(result) != len(tt.expected) {
 				t.Errorf("partition() returned %d tenants, want %d", len(result), len(tt.expected))
 			}
 
 			for tenant, expectedCount := range tt.expected {
-				if metricsData, exists := result[tenant]; !exists {
+				if logsData, exists := result[tenant]; !exists {
 					t.Errorf("partition() missing tenant %s", tenant)
-				} else if len(metricsData.ResourceMetrics) != expectedCount {
-					t.Errorf("partition() tenant %s has %d resource metrics, want %d",
-						tenant, len(metricsData.ResourceMetrics), expectedCount)
+				} else if len(logsData.ResourceLogs) != expectedCount {
+					t.Errorf("partition() tenant %s has %d resource logs, want %d",
+						tenant, len(logsData.ResourceLogs), expectedCount)
 				}
 			}
 		})
@@ -487,8 +486,8 @@ func TestSend(t *testing.T) {
 			defer ctrl.Finish()
 
 			cfg := &config.Config{
-				Metrics: config.Endpoint{
-					Address: "http://backend.example.com/v1/metrics",
+				Logs: config.Endpoint{
+					Address: "http://backend.example.com/v1/logs",
 					Timeout: 30 * time.Second,
 				},
 				Tenant: config.Tenant{
@@ -506,24 +505,24 @@ func TestSend(t *testing.T) {
 			meter := metricnoop.NewMeterProvider().Meter("test")
 			tracer := tracenoop.NewTracerProvider().Tracer("test")
 
-			m, _ := New(cfg, mockClient, logger, meter, tracer)
+			l, _ := New(cfg, mockClient, logger, meter, tracer)
 
-			metricsData := &metricpb.MetricsData{
-				ResourceMetrics: []*metricpb.ResourceMetrics{
+			logsData := &logpb.LogsData{
+				ResourceLogs: []*logpb.ResourceLogs{
 					{
 						Resource: &resourcepb.Resource{},
 					},
 				},
 			}
 
-			_, err := m.send(context.Background(), tt.tenant, metricsData)
+			_, err := l.send(context.Background(), tt.tenant, logsData)
 
 			if tt.wantErr {
 				if err == nil {
 					t.Errorf("send() error = nil, wantErr %v", tt.wantErr)
 					return
 				}
-				if tt.errContains != "" && !containsString(err.Error(), tt.errContains) {
+				if tt.errContains != "" && !strings.Contains(err.Error(), tt.errContains) {
 					t.Errorf("send() error = %v, want error containing %v", err, tt.errContains)
 				}
 				return
@@ -536,14 +535,4 @@ func TestSend(t *testing.T) {
 			// Mock expectations are verified automatically by gomock
 		})
 	}
-}
-
-// Helper function to check if a string contains a substring
-func containsString(s, substr string) bool {
-	return len(s) >= len(substr) &&
-		(s == substr ||
-			(len(s) > len(substr) &&
-				(s[:len(substr)] == substr ||
-					s[len(s)-len(substr):] == substr ||
-					containsString(s[1:], substr))))
 }

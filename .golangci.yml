@@ -1,0 +1,89 @@
+version: "2"
+
+run:
+  timeout: 5m
+  tests: false
+  modules-download-mode: readonly
+  go: "1.23"
+
+linters:
+  enable:
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - gocyclo
+    - misspell
+    - revive
+    - goconst
+    - unconvert
+    - unparam
+    - whitespace
+    - nakedret
+    - errname
+    - errorlint
+    - nilerr
+    - nolintlint
+    - protogetter
+    - copyloopvar
+    - contextcheck
+    - reassign
+    - noctx
+  
+  settings:
+    errcheck:
+      check-type-assertions: false
+      check-blank: false
+      disable-default-exclusions: false
+    
+    govet:
+      enable-all: true
+      disable:
+        - fieldalignment
+        - shadow
+    
+    gocyclo:
+      min-complexity: 35
+    
+    misspell:
+      locale: US
+    
+    revive:
+      severity: warning
+      confidence: 0.8
+      enable-all-rules: false
+      rules:
+        - name: blank-imports
+        - name: context-as-argument
+        - name: dot-imports
+        - name: error-return
+        - name: error-strings
+        - name: error-naming
+        - name: exported
+        - name: increment-decrement
+        - name: indent-error-flow
+        - name: package-comments
+        - name: errorf
+        - name: superfluous-else
+        - name: unreachable-code
+        - name: redefines-builtin-id
+    
+    goconst:
+      min-len: 3
+      min-occurrences: 3
+    
+    nakedret:
+      max-func-lines: 30
+    
+    nolintlint:
+      allow-unused: false
+      require-explanation: true
+      require-specific: true
+    
+    staticcheck:
+      checks: ["all"]
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0

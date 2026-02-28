@@ -11,17 +11,17 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/matt-gp/otel-lgtm-proxy/internal/certutil"
 	"github.com/matt-gp/otel-lgtm-proxy/internal/config"
 	"github.com/matt-gp/otel-lgtm-proxy/internal/logger"
-	"github.com/matt-gp/otel-lgtm-proxy/internal/logs"
-	"github.com/matt-gp/otel-lgtm-proxy/internal/metrics"
 	"github.com/matt-gp/otel-lgtm-proxy/internal/otel"
-	"github.com/matt-gp/otel-lgtm-proxy/internal/traces"
+	"github.com/matt-gp/otel-lgtm-proxy/internal/otellogs"
+	"github.com/matt-gp/otel-lgtm-proxy/internal/otelmetrics"
+	"github.com/matt-gp/otel-lgtm-proxy/internal/oteltraces"
+	"github.com/matt-gp/otel-lgtm-proxy/internal/util/cert"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
 func main() {
-
 	// Initialize context
 	ctx := context.Background()
 
@@ -50,21 +50,39 @@ func main() {
 	defer stop()
 
 	// Initialize logs
-	l, err := logs.New(cfg, &http.Client{Timeout: cfg.Logs.Timeout}, loggingProvider, meterProvider, tracerProvider)
+	l, err := otellogs.New(
+		cfg,
+		&http.Client{Timeout: cfg.Logs.Timeout},
+		loggingProvider,
+		meterProvider,
+		tracerProvider,
+	)
 	if err != nil {
 		logger.Error(ctx, loggingProvider, err.Error())
 		os.Exit(1)
 	}
 
 	// Initialize metrics
-	m, err := metrics.New(cfg, &http.Client{Timeout: cfg.Metrics.Timeout}, loggingProvider, meterProvider, tracerProvider)
+	m, err := otelmetrics.New(
+		cfg,
+		&http.Client{Timeout: cfg.Metrics.Timeout},
+		loggingProvider,
+		meterProvider,
+		tracerProvider,
+	)
 	if err != nil {
 		logger.Error(ctx, loggingProvider, err.Error())
 		os.Exit(1)
 	}
 
 	// Initialize traces
-	t, err := traces.New(cfg, &http.Client{Timeout: cfg.Traces.Timeout}, loggingProvider, meterProvider, tracerProvider)
+	t, err := oteltraces.New(
+		cfg,
+		&http.Client{Timeout: cfg.Traces.Timeout},
+		loggingProvider,
+		meterProvider,
+		tracerProvider,
+	)
 	if err != nil {
 		logger.Error(ctx, loggingProvider, err.Error())
 		os.Exit(1)
@@ -74,7 +92,7 @@ func main() {
 	router := http.NewServeMux()
 
 	// Health check endpoint
-	router.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
+	router.HandleFunc("GET /health", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		if _, err := w.Write([]byte("OK")); err != nil {
 			logger.Error(ctx, loggingProvider, err.Error())
@@ -99,15 +117,15 @@ func main() {
 	}
 
 	// Load TLS certificates
-	if certutil.TLSEnabled(&cfg.Http.TLS) {
-		certs, err := tls.LoadX509KeyPair(cfg.Http.TLS.CertFile, cfg.Http.TLS.KeyFile)
+	if cert.TLSEnabled(&cfg.HTTP.TLS) {
+		certPair, err := tls.LoadX509KeyPair(cfg.HTTP.TLS.CertFile, cfg.HTTP.TLS.KeyFile)
 		if err != nil {
 			logger.Error(ctx, loggingProvider, err.Error())
 			os.Exit(1)
 		}
 
 		caPool := x509.NewCertPool()
-		caCert, err := os.ReadFile(cfg.Http.TLS.CAFile)
+		caCert, err := os.ReadFile(cfg.HTTP.TLS.CAFile)
 		if err != nil {
 			logger.Error(ctx, loggingProvider, err.Error())
 			os.Exit(1)
@@ -115,27 +133,35 @@ func main() {
 
 		caPool.AppendCertsFromPEM(caCert)
 
-		tlsConfig.Certificates = []tls.Certificate{certs}
+		tlsConfig.Certificates = []tls.Certificate{certPair}
 		tlsConfig.RootCAs = caPool
-		tlsConfig.ClientAuth = certutil.StringClientAuthType(cfg.Http.TLS.ClientAuthType)
+		tlsConfig.ClientAuth = cert.StringClientAuthType(cfg.HTTP.TLS.ClientAuthType)
 	}
 
 	server := http.Server{
 		MaxHeaderBytes: 1 << 20, // 1MB max header size
-		Addr:           cfg.Http.Address,
-		Handler:        router,
+		Addr:           cfg.HTTP.Address,
+		Handler:        otelhttp.NewHandler(router, "otel-lgtm-proxy"),
 		TLSConfig:      tlsConfig,
 	}
 
 	go func() {
-		if certutil.TLSEnabled(&cfg.Http.TLS) {
-			logger.Info(ctx, loggingProvider, fmt.Sprintf("starting https server on %s", cfg.Http.Address))
+		if cert.TLSEnabled(&cfg.HTTP.TLS) {
+			logger.Info(
+				ctx,
+				loggingProvider,
+				fmt.Sprintf("starting https server on %s", cfg.HTTP.Address),
+			)
 			if err := server.ListenAndServeTLS("", ""); err != nil {
 				logger.Error(ctx, loggingProvider, err.Error())
 				os.Exit(1)
 			}
 		} else {
-			logger.Info(ctx, loggingProvider, fmt.Sprintf("starting http server on %s", cfg.Http.Address))
+			logger.Info(
+				ctx,
+				loggingProvider,
+				fmt.Sprintf("starting http server on %s", cfg.HTTP.Address),
+			)
 			if err := server.ListenAndServe(); err != nil {
 				logger.Error(ctx, loggingProvider, err.Error())
 				os.Exit(1)
