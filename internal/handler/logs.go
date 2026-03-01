@@ -33,6 +33,8 @@ func (h *Handlers) Logs(w http.ResponseWriter, r *http.Request) {
 
 	// Process the log data
 	if err := h.logsProcessor.Dispatch(ctx, h.logsProcessor.Partition(ctx, data.GetResourceLogs())); err != nil {
+		logger.Error(ctx, h.logger, err.Error())
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
 		return
