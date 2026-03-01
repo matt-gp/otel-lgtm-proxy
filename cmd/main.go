@@ -48,7 +48,7 @@ func main() {
 	defer stop()
 
 	// Initialize handlers
-	h := handler.New(
+	h, err := handler.New(
 		cfg,
 		&http.Client{Timeout: cfg.Logs.Timeout},
 		&http.Client{Timeout: cfg.Metrics.Timeout},
@@ -57,6 +57,10 @@ func main() {
 		meterProvider,
 		tracerProvider,
 	)
+	if err != nil {
+		logger.Error(ctx, loggingProvider, err.Error())
+		os.Exit(1)
+	}
 
 	// Initialize HTTP router
 	router := http.NewServeMux()

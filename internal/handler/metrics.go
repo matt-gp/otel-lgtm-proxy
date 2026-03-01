@@ -5,13 +5,11 @@ import (
 	"net/http"
 
 	"github.com/matt-gp/otel-lgtm-proxy/internal/logger"
-	"github.com/matt-gp/otel-lgtm-proxy/internal/processor"
 	"github.com/matt-gp/otel-lgtm-proxy/internal/util/proto"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 	metricpb "go.opentelemetry.io/proto/otlp/metrics/v1"
-	resourcepb "go.opentelemetry.io/proto/otlp/resource/v1"
 )
 
 // Metrics handles incoming OTLP metric requests.
@@ -23,6 +21,7 @@ func (h *Handlers) Metrics(w http.ResponseWriter, r *http.Request) {
 	)
 	defer span.End()
 
+	// Unmarshal the incoming metric data
 	data, err := proto.Unmarshal(r, &metricpb.MetricsData{})
 	if err != nil {
 		logger.Error(ctx, h.logger, err.Error())
@@ -32,35 +31,8 @@ func (h *Handlers) Metrics(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Create processor for this request
-	proc, err := processor.New(
-		h.config,
-		&h.config.Metrics,
-		"metrics",
-		h.metricsClient,
-		h.logger,
-		h.meter,
-		h.tracer,
-		func(rm *metricpb.ResourceMetrics) *resourcepb.Resource {
-			return rm.GetResource()
-		},
-		func(resources []*metricpb.ResourceMetrics) ([]byte, error) {
-			data := &metricpb.MetricsData{
-				ResourceMetrics: resources,
-			}
-			return proto.Marshal(data)
-		},
-	)
-	if err != nil {
-		logger.Error(ctx, h.logger, err.Error())
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
-		return
-	}
-
 	// Process the metric data
-	if err := proc.Dispatch(ctx, proc.Partition(ctx, data.GetResourceMetrics())); err != nil {
+	if err := h.metricsProcessor.Dispatch(ctx, h.metricsProcessor.Partition(ctx, data.GetResourceMetrics())); err != nil {
 		logger.Error(ctx, h.logger, err.Error())
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		span.RecordError(err)

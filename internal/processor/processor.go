@@ -68,6 +68,7 @@ func New[T ResourceData](
 	getResource func(T) *resourcepb.Resource,
 	marshalResources func([]T) ([]byte, error),
 ) (*Processor[T], error) {
+	// Create a counter for the total number of records processed by the proxy
 	proxyRecordsMetric, err := meter.Int64Counter(
 		"otel_lgtm_proxy_records_total",
 		metric.WithDescription("Total number of otel lgtm proxy records processed"),
@@ -76,6 +77,7 @@ func New[T ResourceData](
 		return nil, fmt.Errorf("failed to create otel lgtm proxy records counter: %w", err)
 	}
 
+	// Create a counter for the total number of requests processed by the proxy
 	proxyRequestsMetric, err := meter.Int64Counter(
 		"otel_lgtm_proxy_requests_total",
 		metric.WithDescription("Total number of otel lgtm proxy requests processed"),
@@ -84,6 +86,7 @@ func New[T ResourceData](
 		return nil, fmt.Errorf("failed to create otel lgtm proxy requests counter: %w", err)
 	}
 
+	// Create a histogram for the latency of requests processed by the proxy
 	proxyLatencyMetric, err := meter.Int64Histogram(
 		"otel_lgtm_proxy_request_duration_seconds",
 		metric.WithDescription("Latency of otel lgtm proxy requests"),
@@ -93,6 +96,7 @@ func New[T ResourceData](
 		return nil, fmt.Errorf("failed to create otel lgtm proxy latency histogram: %w", err)
 	}
 
+	// Configure TLS if enabled
 	if cert.TLSEnabled(&endpoint.TLS) {
 		tlsConfig, err := cert.CreateTLSConfig(endpoint)
 		if err != nil {
