@@ -205,14 +205,12 @@ func (p *Processor[T]) Dispatch(ctx context.Context, tenantMap map[string][]T) e
 	waitGroup := sync.WaitGroup{}
 
 	for tenant, resources := range tenantMap {
-		tenantAttribute := attribute.String("signal.tenant", tenant)
-
 		ctx, span := p.tracer.Start(
 			ctx,
 			fmt.Sprintf("%s.dispatch", p.signalType),
 			trace.WithAttributes(
 				p.signalTypeAttr(),
-				tenantAttribute,
+				attribute.String("signal.tenant", tenant),
 			),
 		)
 		defer span.End()
@@ -221,6 +219,8 @@ func (p *Processor[T]) Dispatch(ctx context.Context, tenantMap map[string][]T) e
 
 		go func(tenant string, resources []T) {
 			defer waitGroup.Done()
+
+			tenantAttribute := attribute.String("signal.tenant", tenant)
 
 			resp, err := p.send(ctx, tenant, resources)
 			if err != nil {
