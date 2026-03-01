@@ -8,7 +8,7 @@ import (
 	"reflect"
 	"testing"
 
-	v1 "go.opentelemetry.io/proto/otlp/common/v1"
+	common "go.opentelemetry.io/proto/otlp/common/v1"
 	logpb "go.opentelemetry.io/proto/otlp/logs/v1"
 	metricpb "go.opentelemetry.io/proto/otlp/metrics/v1"
 	tracepb "go.opentelemetry.io/proto/otlp/trace/v1"
@@ -69,8 +69,8 @@ func TestMarshal(t *testing.T) {
 							{
 								LogRecords: []*logpb.LogRecord{
 									{
-										Body: &v1.AnyValue{
-											Value: &v1.AnyValue_StringValue{
+										Body: &common.AnyValue{
+											Value: &common.AnyValue_StringValue{
 												StringValue: "test log",
 											},
 										},
@@ -107,7 +107,7 @@ func TestMarshal(t *testing.T) {
 	}
 }
 
-func TestUnmarshal_BinaryProtobuf(t *testing.T) {
+func TestUnmarshal(t *testing.T) {
 	metricsData := &metricpb.MetricsData{
 		ResourceMetrics: []*metricpb.ResourceMetrics{
 			{
@@ -124,151 +124,113 @@ func TestUnmarshal_BinaryProtobuf(t *testing.T) {
 		},
 	}
 
-	body, err := proto.Marshal(metricsData)
-	if err != nil {
-		t.Fatalf("Failed to marshal test data: %v", err)
-	}
-
-	req := &http.Request{
-		Body: io.NopCloser(bytes.NewReader(body)),
-		Header: http.Header{
-			"Content-Type": []string{"application/x-protobuf"},
-		},
-	}
-
-	got, err := Unmarshal(req, reflect.TypeOf(&metricpb.MetricsData{}))
-	if err != nil {
-		t.Errorf("Unmarshal() error = %v", err)
-		return
-	}
-
-	result, ok := got.(*metricpb.MetricsData)
-	if !ok {
-		t.Errorf("Unmarshal() returned wrong type")
-		return
-	}
-
-	if len(result.ResourceMetrics) != 1 {
-		t.Errorf("Expected 1 ResourceMetric, got %d", len(result.ResourceMetrics))
-	}
-}
-
-func TestUnmarshal_JSON(t *testing.T) {
-	metricsData := &metricpb.MetricsData{
-		ResourceMetrics: []*metricpb.ResourceMetrics{
-			{
-				ScopeMetrics: []*metricpb.ScopeMetrics{
-					{
-						Metrics: []*metricpb.Metric{
-							{
-								Name: "test.metric",
-							},
-						},
+	tests := []struct {
+		name        string
+		setupReq    func() *http.Request
+		target      proto.Message
+		wantErr     bool
+		validateRes func(*testing.T, proto.Message)
+	}{
+		{
+			name: "binary protobuf",
+			setupReq: func() *http.Request {
+				body, _ := proto.Marshal(metricsData)
+				return &http.Request{
+					Body: io.NopCloser(bytes.NewReader(body)),
+					Header: http.Header{
+						"Content-Type": []string{"application/x-protobuf"},
 					},
-				},
+				}
+			},
+			target:  &metricpb.MetricsData{},
+			wantErr: false,
+			validateRes: func(t *testing.T, msg proto.Message) {
+				result := msg.(*metricpb.MetricsData)
+				if len(result.ResourceMetrics) != 1 {
+					t.Errorf("Expected 1 ResourceMetric, got %d", len(result.ResourceMetrics))
+				}
 			},
 		},
-	}
-
-	body, err := protojson.Marshal(metricsData)
-	if err != nil {
-		t.Fatalf("Failed to marshal test data: %v", err)
-	}
-
-	req := &http.Request{
-		Body: io.NopCloser(bytes.NewReader(body)),
-		Header: http.Header{
-			"Content-Type": []string{"application/json"},
-		},
-	}
-
-	got, err := Unmarshal(req, reflect.TypeOf(&metricpb.MetricsData{}))
-	if err != nil {
-		t.Errorf("Unmarshal() error = %v", err)
-		return
-	}
-
-	result, ok := got.(*metricpb.MetricsData)
-	if !ok {
-		t.Errorf("Unmarshal() returned wrong type")
-		return
-	}
-
-	if len(result.ResourceMetrics) != 1 {
-		t.Errorf("Expected 1 ResourceMetric, got %d", len(result.ResourceMetrics))
-	}
-}
-
-func TestUnmarshal_EmptyContentType(t *testing.T) {
-	metricsData := &metricpb.MetricsData{
-		ResourceMetrics: []*metricpb.ResourceMetrics{
-			{
-				ScopeMetrics: []*metricpb.ScopeMetrics{
-					{
-						Metrics: []*metricpb.Metric{
-							{
-								Name: "test.metric",
-							},
-						},
+		{
+			name: "json",
+			setupReq: func() *http.Request {
+				body, _ := protojson.Marshal(metricsData)
+				return &http.Request{
+					Body: io.NopCloser(bytes.NewReader(body)),
+					Header: http.Header{
+						"Content-Type": []string{"application/json"},
 					},
-				},
+				}
+			},
+			target:  &metricpb.MetricsData{},
+			wantErr: false,
+			validateRes: func(t *testing.T, msg proto.Message) {
+				result := msg.(*metricpb.MetricsData)
+				if len(result.ResourceMetrics) != 1 {
+					t.Errorf("Expected 1 ResourceMetric, got %d", len(result.ResourceMetrics))
+				}
 			},
 		},
-	}
-
-	// Test with JSON body but no content-type
-	body, err := protojson.Marshal(metricsData)
-	if err != nil {
-		t.Fatalf("Failed to marshal test data: %v", err)
-	}
-
-	req := &http.Request{
-		Body:   io.NopCloser(bytes.NewReader(body)),
-		Header: http.Header{},
-	}
-
-	got, err := Unmarshal(req, reflect.TypeOf(&metricpb.MetricsData{}))
-	if err != nil {
-		t.Errorf("Unmarshal() error = %v", err)
-		return
-	}
-
-	result, ok := got.(*metricpb.MetricsData)
-	if !ok {
-		t.Errorf("Unmarshal() returned wrong type")
-		return
-	}
-
-	if len(result.ResourceMetrics) != 1 {
-		t.Errorf("Expected 1 ResourceMetric, got %d", len(result.ResourceMetrics))
-	}
-}
-
-func TestUnmarshal_InvalidData(t *testing.T) {
-	req := &http.Request{
-		Body: io.NopCloser(bytes.NewReader([]byte("invalid data"))),
-		Header: http.Header{
-			"Content-Type": []string{"application/x-protobuf"},
+		{
+			name: "empty content type defaults to binary protobuf",
+			setupReq: func() *http.Request {
+				body, _ := proto.Marshal(metricsData)
+				return &http.Request{
+					Body:   io.NopCloser(bytes.NewReader(body)),
+					Header: http.Header{},
+				}
+			},
+			target:  &metricpb.MetricsData{},
+			wantErr: false,
+			validateRes: func(t *testing.T, msg proto.Message) {
+				result := msg.(*metricpb.MetricsData)
+				if len(result.ResourceMetrics) != 1 {
+					t.Errorf("Expected 1 ResourceMetric, got %d", len(result.ResourceMetrics))
+				}
+			},
+		},
+		{
+			name: "invalid data",
+			setupReq: func() *http.Request {
+				return &http.Request{
+					Body: io.NopCloser(bytes.NewReader([]byte("invalid data"))),
+					Header: http.Header{
+						"Content-Type": []string{"application/x-protobuf"},
+					},
+				}
+			},
+			target:  &metricpb.MetricsData{},
+			wantErr: true,
+		},
+		{
+			name: "read error",
+			setupReq: func() *http.Request {
+				return &http.Request{
+					Body: &errorReader{},
+					Header: http.Header{
+						"Content-Type": []string{"application/x-protobuf"},
+					},
+				}
+			},
+			target:  &metricpb.MetricsData{},
+			wantErr: true,
 		},
 	}
 
-	_, err := Unmarshal(req, reflect.TypeOf(&metricpb.MetricsData{}))
-	if err == nil {
-		t.Error("Unmarshal() expected error with invalid data, got nil")
-	}
-}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := tt.setupReq()
+			result, err := Unmarshal(req, tt.target)
 
-func TestUnmarshal_ReadError(t *testing.T) {
-	req := &http.Request{
-		Body: &errorReader{},
-		Header: http.Header{
-			"Content-Type": []string{"application/x-protobuf"},
-		},
-	}
+			if (err != nil) != tt.wantErr {
+				t.Errorf("Unmarshal() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
 
-	_, err := Unmarshal(req, reflect.TypeOf(&metricpb.MetricsData{}))
-	if err == nil {
-		t.Error("Unmarshal() expected error when reading body fails, got nil")
+			if !tt.wantErr && tt.validateRes != nil {
+				tt.validateRes(t, result)
+			}
+		})
 	}
 }
 

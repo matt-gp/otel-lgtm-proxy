@@ -4,10 +4,13 @@ package proto
 import (
 	"io"
 	"net/http"
-	"reflect"
 
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
+)
+
+const (
+	contentTypeProtoJSON = "application/json"
 )
 
 // Marshal marshals the request using protobuf binary format.
@@ -16,31 +19,25 @@ func Marshal(payload any) ([]byte, error) {
 }
 
 // Unmarshal unmarshals the request.
-func Unmarshal(req *http.Request, targetType reflect.Type) (any, error) {
-	// Create a new instance of the target type
-	target := reflect.New(targetType.Elem()).Interface().(proto.Message)
+func Unmarshal[T proto.Message](req *http.Request, targetType T) (T, error) {
+	var zero T
 
 	body, err := io.ReadAll(req.Body)
 	if err != nil {
-		return nil, err
+		return zero, err
 	}
 
-	contentType := req.Header.Get("Content-Type")
-
-	// Try protojson first for JSON-like content
-	if contentType == "application/json" || contentType == "" {
-		if err := protojson.Unmarshal(body, target); err != nil {
-			// If protojson fails, try binary protobuf
-			if protoErr := proto.Unmarshal(body, target); protoErr != nil {
-				return nil, err // return the original protojson error
-			}
+	switch req.Header.Get("Content-Type") {
+	case contentTypeProtoJSON:
+		if err := protojson.Unmarshal(body, targetType); err != nil {
+			return zero, err
 		}
-	} else {
-		// For protobuf content types, use binary protobuf directly
-		if err := proto.Unmarshal(body, target); err != nil {
-			return nil, err
+	default:
+		// Default to binary protobuf
+		if err := proto.Unmarshal(body, targetType); err != nil {
+			return zero, err
 		}
 	}
 
-	return target, nil
+	return targetType, nil
 }

@@ -12,11 +12,9 @@ import (
 	"syscall"
 
 	"github.com/matt-gp/otel-lgtm-proxy/internal/config"
+	"github.com/matt-gp/otel-lgtm-proxy/internal/handler"
 	"github.com/matt-gp/otel-lgtm-proxy/internal/logger"
 	"github.com/matt-gp/otel-lgtm-proxy/internal/otel"
-	"github.com/matt-gp/otel-lgtm-proxy/internal/otellogs"
-	"github.com/matt-gp/otel-lgtm-proxy/internal/otelmetrics"
-	"github.com/matt-gp/otel-lgtm-proxy/internal/oteltraces"
 	"github.com/matt-gp/otel-lgtm-proxy/internal/util/cert"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
@@ -38,9 +36,9 @@ func main() {
 	}
 
 	// Initialize OpenTelemetry providers
-	loggingProvider := provider.LoggerProvider.Logger("otel-lgtm-proxy")
-	meterProvider := provider.MeterProvider.Meter("otel-lgtm-proxy")
-	tracerProvider := provider.TracerProvider.Tracer("otel-lgtm-proxy")
+	loggingProvider := provider.LoggerProvider.Logger("logs")
+	meterProvider := provider.MeterProvider.Meter("metrics")
+	tracerProvider := provider.TracerProvider.Tracer("traces")
 
 	// Start application
 	logger.Info(ctx, loggingProvider, "Starting application")
@@ -49,44 +47,16 @@ func main() {
 	ctx, stop := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	// Initialize logs
-	l, err := otellogs.New(
+	// Initialize handlers
+	h := handler.New(
 		cfg,
 		&http.Client{Timeout: cfg.Logs.Timeout},
-		loggingProvider,
-		meterProvider,
-		tracerProvider,
-	)
-	if err != nil {
-		logger.Error(ctx, loggingProvider, err.Error())
-		os.Exit(1)
-	}
-
-	// Initialize metrics
-	m, err := otelmetrics.New(
-		cfg,
 		&http.Client{Timeout: cfg.Metrics.Timeout},
-		loggingProvider,
-		meterProvider,
-		tracerProvider,
-	)
-	if err != nil {
-		logger.Error(ctx, loggingProvider, err.Error())
-		os.Exit(1)
-	}
-
-	// Initialize traces
-	t, err := oteltraces.New(
-		cfg,
 		&http.Client{Timeout: cfg.Traces.Timeout},
 		loggingProvider,
 		meterProvider,
 		tracerProvider,
 	)
-	if err != nil {
-		logger.Error(ctx, loggingProvider, err.Error())
-		os.Exit(1)
-	}
 
 	// Initialize HTTP router
 	router := http.NewServeMux()
@@ -101,15 +71,15 @@ func main() {
 
 	// register the logs handler.
 	logger.Info(ctx, loggingProvider, "receiving logs on /v1/logs")
-	router.HandleFunc("POST /v1/logs", l.Handler)
+	router.HandleFunc("POST /v1/logs", h.Logs)
 
 	// register the metrics handler.
 	logger.Info(ctx, loggingProvider, "receiving metrics on /v1/metrics")
-	router.HandleFunc("POST /v1/metrics", m.Handler)
+	router.HandleFunc("POST /v1/metrics", h.Metrics)
 
 	// register the traces handler.
 	logger.Info(ctx, loggingProvider, "receiving traces on /v1/traces")
-	router.HandleFunc("POST /v1/traces", t.Handler)
+	router.HandleFunc("POST /v1/traces", h.Traces)
 
 	// Initialize TLS configuration
 	tlsConfig := &tls.Config{
