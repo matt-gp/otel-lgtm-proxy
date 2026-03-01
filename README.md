@@ -222,18 +222,18 @@ internal/
 ├── config/                    # Configuration management
 │   ├── config.go             # Configuration struct and parsing
 │   └── config_test.go        # Configuration tests
+├── handler/                   # HTTP request handlers
+│   ├── handlers.go           # Handler container and constructor
+│   ├── handlers_test.go      # Handler creation tests
+│   ├── logs.go               # Logs endpoint handler
+│   ├── metrics.go            # Metrics endpoint handler
+│   └── traces.go             # Traces endpoint handler
+├── processor/                 # Generic telemetry processing
+│   ├── processor.go          # Generic processor with partitioning and dispatch
+│   ├── processor_test.go     # Comprehensive table-driven tests
 ├── otel/                     # OpenTelemetry provider setup
 │   ├── otel.go              # Provider initialization and configuration
 │   └── otel_test.go         # Provider tests
-├── otellogs/                 # Log telemetry processing
-│   ├── otellogs.go          # Log handler, partitioning, and forwarding
-│   └── otellogs_test.go     # Comprehensive table-driven tests
-├── otelmetrics/              # Metric telemetry processing
-│   ├── otelmetrics.go       # Metric handler, partitioning, and forwarding
-│   └── otelmetrics_test.go  # Comprehensive table-driven tests
-├── oteltraces/               # Trace telemetry processing
-│   ├── oteltraces.go        # Trace handler, partitioning, and forwarding
-│   └── oteltraces_test.go   # Comprehensive table-driven tests
 ├── util/                     # Utility packages
 │   ├── cert/                # TLS certificate utilities
 │   ├── proto/              # Protobuf utilities
@@ -247,37 +247,65 @@ internal/
 
 - **`cmd/`**: Application bootstrapping and dependency injection
 - **`internal/config/`**: Environment-based configuration with validation
+- **`internal/handler/`**: HTTP handlers that create per-request processors with signal-specific callbacks
+- **`internal/processor/`**: Generic `Processor[T]` that partitions by tenant and dispatches concurrent requests
 - **`internal/otel/`**: OpenTelemetry provider setup with protocol configuration
-- **`internal/otellogs/`**: OTLP log processing with tenant partitioning and forwarding to Loki
-- **`internal/otelmetrics/`**: OTLP metric processing with temporality handling for Mimir
-- **`internal/oteltraces/`**: OTLP trace processing with correlation support for Tempo
 - **`internal/util/cert/`**: TLS configuration and certificate management
 - **`internal/util/proto/`**: Protobuf utility functions
 - **`internal/util/request/`**: HTTP request utility functions
 - **`internal/logger/`**: Structured logging with OpenTelemetry integration
 
+### Architecture Overview
+
+**Generic Processor Pattern:**
+The core of the service uses Go generics to provide type-safe processing for logs, metrics, and traces:
+
+```go
+type Processor[T ResourceData] struct {
+    // ... configuration and clients
+    getResource      func(T) *resourcepb.Resource
+    marshalResources func([]T) ([]byte, error)
+}
+```
+
+**Per-Request Processing:**
+Each HTTP handler creates a fresh processor instance per request with signal-specific callbacks:
+
+```go
+func (h *Handlers) Logs(w http.ResponseWriter, r *http.Request) {
+    // Create processor for this request
+    proc, err := processor.New(
+        h.config,
+        &h.config.Logs,
+        "logs",
+        h.logsClient, // Signal-specific HTTP client with timeout
+        h.logger, h.meter, h.tracer,
+        func(rl *logpb.ResourceLogs) *resourcepb.Resource {
+            return rl.GetResource()
+        },
+        func(resources []*logpb.ResourceLogs) ([]byte, error) {
+            return proto.Marshal(&logpb.LogsData{ResourceLogs: resources})
+        },
+    )
+    
+    // Partition by tenant and dispatch concurrently
+    proc.Dispatch(ctx, proc.Partition(ctx, data.GetResourceLogs()))
+}
+```
+
 ### Key Functions Per Package
 
-**Logs Package (`internal/otellogs/`):**
-- `New()` - Create logs processor with HTTP client and observability metrics
-- `Handler()` - HTTP handler for `/v1/logs` endpoint
-- `partition()` - Partition logs by tenant from resource attributes
-- `dispatch()` - Concurrent forwarding to backend with tenant headers
-- `send()` - HTTP client with protobuf marshaling and Loki-compatible headers
+**Processor Package (`internal/processor/`):**
+- `New[T ResourceData]()` - Create generic processor with signal-specific callbacks
+- `Partition(ctx, resources)` - Partition resources by tenant from resource attributes
+- `Dispatch(ctx, tenantMap)` - Concurrent forwarding to backend with tenant headers
+- `send(ctx, tenant, resources)` - HTTP client with protobuf marshaling and metrics
 
-**Metrics Package (`internal/otelmetrics/`):**
-- `New()` - Create metrics processor with HTTP client and observability metrics
-- `Handler()` - HTTP handler for `/v1/metrics` endpoint  
-- `partition()` - Partition metrics by tenant from resource attributes
-- `dispatch()` - Concurrent forwarding to backend with tenant headers
-- `send()` - HTTP client with protobuf marshaling and Mimir-compatible headers
-
-**Traces Package (`internal/oteltraces/`):**
-- `New()` - Create traces processor with HTTP client and observability metrics
-- `Handler()` - HTTP handler for `/v1/traces` endpoint
-- `partition()` - Partition traces by tenant from resource attributes
-- `dispatch()` - Concurrent forwarding to backend with tenant headers
-- `send()` - HTTP client with protobuf marshaling and Tempo-compatible headers
+**Handler Package (`internal/handler/`):**
+- `New()` - Create handlers container with config and three HTTP clients (logs, metrics, traces)
+- `Logs(w, r)` - HTTP handler for `/v1/logs` endpoint
+- `Metrics(w, r)` - HTTP handler for `/v1/metrics` endpoint
+- `Traces(w, r)` - HTTP handler for `/v1/traces` endpoint
 
 ## OpenTelemetry Collector Configuration
 
@@ -742,20 +770,58 @@ data:
 
 ## Testing
 
-This project includes comprehensive unit testing with coverage reporting.
+This project includes comprehensive unit testing with table-driven tests and generated mocks.
 
-### Unit Testing
+### Running Tests
 
 ```bash
-# Run unit tests
+# Run all tests
 go test ./...
 
-# Run tests with coverage report
+# Run tests with verbose output
+go test -v ./...
+
+# Run tests with race detection
+go test -race ./...
+
+# Generate coverage report
 go test -coverprofile=coverage.out ./...
+
+# View coverage report
 go tool cover -html=coverage.out
 
-# View coverage in browser (generates coverage.html)
-go tool cover -html=coverage.out -o coverage.html
+# Show coverage by function
+go tool cover -func=coverage.out
+```
+
+### Test Organization
+
+**Processor Tests (`internal/processor/processor_test.go`):**
+- `TestNew` - Processor creation with various configurations
+- `TestPartition` - Tenant partitioning logic with primary/fallback labels and defaults
+- `TestDispatch` - Concurrent request dispatching to multiple tenants
+- `TestSend` - Individual HTTP request handling with error scenarios
+
+**Handler Tests (`internal/handler/handlers_test.go`):**
+- `TestNew` - Handler container creation with dependencies
+
+All tests follow Go best practices:
+- Table-driven test structure with `tests := []struct{...}`
+- Test naming convention: `Test<FunctionName>`
+- Subtests for each scenario using `t.Run(tt.name, func(t *testing.T) {...})`
+- Generated mocks using `mockgen` for interface testing
+- Comprehensive error case coverage
+
+### Mock Generation
+
+Mocks are generated using `mockgen`:
+
+```bash
+# Generate mocks for processor package
+go generate ./internal/processor
+
+# Or manually:
+mockgen -package processor -source internal/processor/processor.go -destination internal/processor/processor_mock.go
 ```
 
 ### Manual Testing Tools
@@ -776,16 +842,6 @@ TENANTS=tenant1,tenant2 INTERVAL=2 ./send-telemetry.sh all
 ```
 
 The scripts continuously generate realistic telemetry data with random content and multi-tenant headers until stopped.
-
-### Docker Testing
-
-```bash
-# Build test image
-docker build -t otel-lgtm-proxy-test .
-
-# Run test container
-docker run --rm otel-lgtm-proxy-test go test ./...
-```
 
 ## Contributing
 
