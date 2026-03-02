@@ -247,7 +247,7 @@ internal/
 
 - **`cmd/`**: Application bootstrapping and dependency injection
 - **`internal/config/`**: Environment-based configuration with validation
-- **`internal/handler/`**: HTTP handlers that create per-request processors with signal-specific callbacks
+- **`internal/handler/`**: HTTP handlers with pre-initialized processors for each signal type
 - **`internal/processor/`**: Generic `Processor[T]` that partitions by tenant and dispatches concurrent requests
 - **`internal/otel/`**: OpenTelemetry provider setup with protocol configuration
 - **`internal/util/cert/`**: TLS configuration and certificate management
@@ -268,18 +268,18 @@ type Processor[T ResourceData] struct {
 }
 ```
 
-**Per-Request Processing:**
-Each HTTP handler creates a fresh processor instance per request with signal-specific callbacks:
+**Processor Initialization:**
+Processors are created once at startup during handler initialization with signal-specific callbacks:
 
 ```go
-func (h *Handlers) Logs(w http.ResponseWriter, r *http.Request) {
-    // Create processor for this request
-    proc, err := processor.New(
-        h.config,
-        &h.config.Logs,
+func New(...) (*Handlers, error) {
+    // Create logs processor at startup
+    logsProcessor, err := processor.New(
+        config,
+        &config.Logs,
         "logs",
-        h.logsClient, // Signal-specific HTTP client with timeout
-        h.logger, h.meter, h.tracer,
+        logsClient, // Signal-specific HTTP client with timeout
+        logger, meter, tracer,
         func(rl *logpb.ResourceLogs) *resourcepb.Resource {
             return rl.GetResource()
         },
@@ -287,9 +287,12 @@ func (h *Handlers) Logs(w http.ResponseWriter, r *http.Request) {
             return proto.Marshal(&logpb.LogsData{ResourceLogs: resources})
         },
     )
-    
-    // Partition by tenant and dispatch concurrently
-    proc.Dispatch(ctx, proc.Partition(ctx, data.GetResourceLogs()))
+    // ... similar for metrics and traces processors
+}
+
+func (h *Handlers) Logs(w http.ResponseWriter, r *http.Request) {
+    // Use pre-initialized processor - partition by tenant and dispatch concurrently
+    h.logsProcessor.Dispatch(ctx, h.logsProcessor.Partition(ctx, data.GetResourceLogs()))
 }
 ```
 
@@ -302,7 +305,7 @@ func (h *Handlers) Logs(w http.ResponseWriter, r *http.Request) {
 - `send(ctx, tenant, resources)` - HTTP client with protobuf marshaling and metrics
 
 **Handler Package (`internal/handler/`):**
-- `New()` - Create handlers container with config and three HTTP clients (logs, metrics, traces)
+- `New()` - Create handlers container with config, three HTTP clients, and three pre-initialized processors (logs, metrics, traces)
 - `Logs(w, r)` - HTTP handler for `/v1/logs` endpoint
 - `Metrics(w, r)` - HTTP handler for `/v1/metrics` endpoint
 - `Traces(w, r)` - HTTP handler for `/v1/traces` endpoint
@@ -803,7 +806,7 @@ go tool cover -func=coverage.out
 - `TestSend` - Individual HTTP request handling with error scenarios
 
 **Handler Tests (`internal/handler/handlers_test.go`):**
-- `TestNew` - Handler container creation with dependencies
+- `TestNew` - Handler container creation with dependencies and processor initialization
 
 All tests follow Go best practices:
 - Table-driven test structure with `tests := []struct{...}`
