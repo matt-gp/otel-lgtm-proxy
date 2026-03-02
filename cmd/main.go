@@ -17,6 +17,7 @@ import (
 	"github.com/matt-gp/otel-lgtm-proxy/internal/otel"
 	"github.com/matt-gp/otel-lgtm-proxy/internal/util/cert"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+	"go.opentelemetry.io/otel/log"
 )
 
 func main() {
@@ -41,7 +42,13 @@ func main() {
 	tracerProvider := provider.TracerProvider.Tracer("traces")
 
 	// Start application
-	logger.Info(ctx, loggingProvider, "Starting application")
+	logger.Info(
+		ctx,
+		loggingProvider,
+		"Starting application",
+		log.KeyValue{Key: "service_name", Value: log.StringValue(cfg.Service.Name)},
+		log.KeyValue{Key: "service_version", Value: log.StringValue(cfg.Service.Version)},
+	)
 
 	// Initialize signal handling
 	ctx, stop := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
@@ -74,16 +81,34 @@ func main() {
 	})
 
 	// register the logs handler.
-	logger.Info(ctx, loggingProvider, "receiving logs on /v1/logs")
-	router.HandleFunc("POST /v1/logs", h.Logs)
+	logsEndpoint := "/v1/logs"
+	logger.Info(
+		ctx,
+		loggingProvider,
+		"receiving logs",
+		log.KeyValue{Key: "endpoint", Value: log.StringValue(logsEndpoint)},
+	)
+	router.HandleFunc("POST "+logsEndpoint, h.Logs)
 
 	// register the metrics handler.
-	logger.Info(ctx, loggingProvider, "receiving metrics on /v1/metrics")
-	router.HandleFunc("POST /v1/metrics", h.Metrics)
+	metricsEndpoint := "/v1/metrics"
+	logger.Info(
+		ctx,
+		loggingProvider,
+		"receiving metrics",
+		log.KeyValue{Key: "endpoint", Value: log.StringValue(metricsEndpoint)},
+	)
+	router.HandleFunc("POST "+metricsEndpoint, h.Metrics)
 
 	// register the traces handler.
-	logger.Info(ctx, loggingProvider, "receiving traces on /v1/traces")
-	router.HandleFunc("POST /v1/traces", h.Traces)
+	tracesEndpoint := "/v1/traces"
+	logger.Info(
+		ctx,
+		loggingProvider,
+		"receiving traces",
+		log.KeyValue{Key: "endpoint", Value: log.StringValue(tracesEndpoint)},
+	)
+	router.HandleFunc("POST "+tracesEndpoint, h.Traces)
 
 	// Initialize TLS configuration
 	tlsConfig := &tls.Config{
@@ -94,14 +119,24 @@ func main() {
 	if cert.TLSEnabled(&cfg.HTTP.TLS) {
 		certPair, err := tls.LoadX509KeyPair(cfg.HTTP.TLS.CertFile, cfg.HTTP.TLS.KeyFile)
 		if err != nil {
-			logger.Error(ctx, loggingProvider, err.Error())
+			logger.Error(
+				ctx,
+				loggingProvider,
+				"unable to read certificate or key file",
+				log.KeyValue{Key: "error", Value: log.StringValue(err.Error())},
+			)
 			os.Exit(1)
 		}
 
 		caPool := x509.NewCertPool()
 		caCert, err := os.ReadFile(cfg.HTTP.TLS.CAFile)
 		if err != nil {
-			logger.Error(ctx, loggingProvider, err.Error())
+			logger.Error(
+				ctx,
+				loggingProvider,
+				"unable to read CA file",
+				log.KeyValue{Key: "error", Value: log.StringValue(err.Error())},
+			)
 			os.Exit(1)
 		}
 
@@ -124,7 +159,9 @@ func main() {
 			logger.Info(
 				ctx,
 				loggingProvider,
-				fmt.Sprintf("starting https server on %s", cfg.HTTP.Address),
+				"starting server",
+				log.KeyValue{Key: "address", Value: log.StringValue(cfg.HTTP.Address)},
+				log.KeyValue{Key: "tls_enabled", Value: log.BoolValue(true)},
 			)
 			if err := server.ListenAndServeTLS("", ""); err != nil {
 				logger.Error(ctx, loggingProvider, err.Error())
@@ -134,7 +171,9 @@ func main() {
 			logger.Info(
 				ctx,
 				loggingProvider,
-				fmt.Sprintf("starting http server on %s", cfg.HTTP.Address),
+				"starting server",
+				log.KeyValue{Key: "address", Value: log.StringValue(cfg.HTTP.Address)},
+				log.KeyValue{Key: "tls_enabled", Value: log.BoolValue(false)},
 			)
 			if err := server.ListenAndServe(); err != nil {
 				logger.Error(ctx, loggingProvider, err.Error())

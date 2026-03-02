@@ -15,8 +15,8 @@ func AddHeaders(tenant string, req *http.Request, config *config.Config, headers
 	req.Header.Add(config.Tenant.Header, fmt.Sprintf(config.Tenant.Format, tenant))
 
 	// Add custom headers
-	customHeaders := strings.Split(headers, ",")
-	for _, customHeader := range customHeaders {
+	customHeaders := strings.SplitSeq(headers, ",")
+	for customHeader := range customHeaders {
 		kv := strings.SplitN(customHeader, "=", 2)
 		if len(kv) == 2 {
 			req.Header.Add(kv[0], kv[1])

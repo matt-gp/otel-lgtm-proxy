@@ -202,7 +202,7 @@ func (p *Processor[T]) Partition(ctx context.Context, resources []T) map[string]
 
 // Dispatch sends all the requests to the target.
 func (p *Processor[T]) Dispatch(ctx context.Context, tenantMap map[string][]T) error {
-	waitGroup := sync.WaitGroup{}
+	wg := sync.WaitGroup{}
 
 	for tenant, resources := range tenantMap {
 		ctx, span := p.tracer.Start(
@@ -215,10 +215,10 @@ func (p *Processor[T]) Dispatch(ctx context.Context, tenantMap map[string][]T) e
 		)
 		defer span.End()
 
-		waitGroup.Add(1)
+		wg.Add(1)
 
 		go func(tenant string, resources []T) {
-			defer waitGroup.Done()
+			defer wg.Done()
 
 			tenantAttribute := attribute.String("signal.tenant", tenant)
 
@@ -245,16 +245,18 @@ func (p *Processor[T]) Dispatch(ctx context.Context, tenantMap map[string][]T) e
 				return
 			}
 
+			signalResponseStatusCodeAttr := attribute.String(
+				"signal.response.status.code",
+				strconv.Itoa(resp.StatusCode),
+			)
+
 			p.proxyRecordsMetric.Add(
 				ctx,
 				int64(len(resources)),
 				metric.WithAttributes(
 					p.signalTypeAttr(),
 					tenantAttribute,
-					attribute.String(
-						"signal.response.status.code",
-						strconv.Itoa(resp.StatusCode),
-					),
+					signalResponseStatusCodeAttr,
 				),
 			)
 
@@ -264,10 +266,7 @@ func (p *Processor[T]) Dispatch(ctx context.Context, tenantMap map[string][]T) e
 				metric.WithAttributes(
 					p.signalTypeAttr(),
 					tenantAttribute,
-					attribute.String(
-						"signal.response.status.code",
-						strconv.Itoa(resp.StatusCode),
-					),
+					signalResponseStatusCodeAttr,
 				),
 			)
 
@@ -275,12 +274,12 @@ func (p *Processor[T]) Dispatch(ctx context.Context, tenantMap map[string][]T) e
 				ctx,
 				p.logger,
 				fmt.Sprintf(
-					"sent %d records status %d for tenant %s",
+					"sent %d records",
 					len(resources),
-					resp.StatusCode,
-					tenant,
 				),
 				p.signalTypeLogAttr(),
+				log.KeyValueFromAttribute(tenantAttribute),
+				log.KeyValueFromAttribute(signalResponseStatusCodeAttr),
 			)
 
 			logger.Trace(
@@ -288,13 +287,16 @@ func (p *Processor[T]) Dispatch(ctx context.Context, tenantMap map[string][]T) e
 				p.logger,
 				fmt.Sprintf("%+v", resources),
 				p.signalTypeLogAttr(),
+				log.KeyValueFromAttribute(tenantAttribute),
+				log.KeyValueFromAttribute(signalResponseStatusCodeAttr),
 			)
 
 			span.SetStatus(codes.Ok, "sent successfully")
 		}(tenant, resources)
 	}
 
-	waitGroup.Wait()
+	wg.Wait()
+
 	return nil
 }
 
@@ -306,11 +308,13 @@ func (p *Processor[T]) send(
 ) (http.Response, error) {
 	start := time.Now()
 
+	signalTenantAttr := attribute.String("signal.tenant", tenant)
+
 	ctx, span := p.tracer.Start(ctx,
 		fmt.Sprintf("%s.send", p.signalType),
 		trace.WithAttributes(
 			p.signalTypeAttr(),
-			attribute.String("signal.tenant", tenant),
+			signalTenantAttr,
 			attribute.Int("signal.tenant.records", len(resources)),
 		),
 	)
@@ -319,6 +323,15 @@ func (p *Processor[T]) send(
 	// Marshal resources to bytes
 	body, err := p.marshalResources(resources)
 	if err != nil {
+		logger.Error(
+			ctx,
+			p.logger,
+			err.Error(),
+			p.signalTypeLogAttr(),
+			log.KeyValueFromAttribute(signalTenantAttr),
+		)
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "failed to marshal data")
 		return http.Response{}, fmt.Errorf("failed to marshal data: %w", err)
 	}
 
@@ -329,6 +342,15 @@ func (p *Processor[T]) send(
 		io.NopCloser(bytes.NewReader(body)),
 	)
 	if err != nil {
+		logger.Error(
+			ctx,
+			p.logger,
+			err.Error(),
+			p.signalTypeLogAttr(),
+			log.KeyValueFromAttribute(signalTenantAttr),
+		)
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "failed to create request")
 		return http.Response{}, fmt.Errorf("failed to create request: %w", err)
 	}
 
@@ -341,6 +363,13 @@ func (p *Processor[T]) send(
 
 	resp, err := p.client.Do(req)
 	if err != nil {
+		logger.Error(
+			ctx,
+			p.logger,
+			err.Error(),
+			p.signalTypeLogAttr(),
+			log.KeyValueFromAttribute(signalTenantAttr),
+		)
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "failed to send")
 		return http.Response{}, fmt.Errorf("failed to send request: %w", err)
@@ -354,26 +383,27 @@ func (p *Processor[T]) send(
 				p.logger,
 				fmt.Sprintf("failed to close response body: %v", closeErr),
 				p.signalTypeLogAttr(),
+				log.KeyValueFromAttribute(signalTenantAttr),
 			)
 			span.RecordError(closeErr)
 			span.SetStatus(codes.Error, "failed to close response body")
 		}
 	}()
 
-	respAttr := attribute.String(
+	signalResponseStatusCodeAttr := attribute.String(
 		"signal.response.status.code",
 		strconv.Itoa(resp.StatusCode),
 	)
 
-	span.SetAttributes(respAttr)
+	span.SetAttributes(signalResponseStatusCodeAttr)
 	span.SetStatus(codes.Ok, "sent successfully")
 
 	p.proxyLatencyMetric.Record(ctx,
 		time.Since(start).Milliseconds(),
 		metric.WithAttributes(
-			respAttr,
+			signalResponseStatusCodeAttr,
 			p.signalTypeAttr(),
-			attribute.String("signal.tenant", tenant),
+			signalTenantAttr,
 		),
 	)
 
