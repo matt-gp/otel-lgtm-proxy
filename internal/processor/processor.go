@@ -131,6 +131,45 @@ func (p *Processor[T]) signalTypeLogAttr() log.KeyValue {
 	return log.String("signal.type", p.signalType)
 }
 
+func (p *Processor[T]) proxyRecordsMetricAdd(ctx context.Context, tenant string, count int64, opts ...attribute.KeyValue) {
+	attrs := []attribute.KeyValue{
+		attribute.String("signal.tenant", tenant),
+		p.signalTypeAttr(),
+	}
+	attrs = append(attrs, opts...)
+	p.proxyRecordsMetric.Add(
+		ctx,
+		count,
+		metric.WithAttributes(attrs...),
+	)
+}
+
+func (p *Processor[T]) proxyRequestsMetricAdd(ctx context.Context, tenant string, opts ...attribute.KeyValue) {
+	attrs := []attribute.KeyValue{
+		attribute.String("signal.tenant", tenant),
+		p.signalTypeAttr(),
+	}
+	attrs = append(attrs, opts...)
+	p.proxyRequestsMetric.Add(
+		ctx,
+		1,
+		metric.WithAttributes(attrs...),
+	)
+}
+
+func (p *Processor[T]) proxyLatencyMetricRecord(ctx context.Context, tenant string, latency int64, opts ...attribute.KeyValue) {
+	attrs := []attribute.KeyValue{
+		attribute.String("signal.tenant", tenant),
+		p.signalTypeAttr(),
+	}
+	attrs = append(attrs, opts...)
+	p.proxyLatencyMetric.Record(
+		ctx,
+		latency,
+		metric.WithAttributes(attrs...),
+	)
+}
+
 // Partition partitions the resources by tenant.
 func (p *Processor[T]) Partition(ctx context.Context, resources []T) map[string][]T {
 	ctx, span := p.tracer.Start(
@@ -224,14 +263,7 @@ func (p *Processor[T]) Dispatch(ctx context.Context, tenantMap map[string][]T) e
 
 			resp, err := p.send(ctx, tenant, resources)
 			if err != nil {
-				p.proxyRecordsMetric.Add(
-					ctx,
-					int64(len(resources)),
-					metric.WithAttributes(
-						tenantAttribute,
-						p.signalTypeAttr(),
-					),
-				)
+				p.proxyRecordsMetricAdd(ctx, tenant, int64(len(resources)))
 
 				logger.Error(
 					ctx,
@@ -250,25 +282,9 @@ func (p *Processor[T]) Dispatch(ctx context.Context, tenantMap map[string][]T) e
 				strconv.Itoa(resp.StatusCode),
 			)
 
-			p.proxyRecordsMetric.Add(
-				ctx,
-				int64(len(resources)),
-				metric.WithAttributes(
-					p.signalTypeAttr(),
-					tenantAttribute,
-					signalResponseStatusCodeAttr,
-				),
-			)
+			p.proxyRecordsMetricAdd(ctx, tenant, int64(len(resources)), signalResponseStatusCodeAttr)
 
-			p.proxyRequestsMetric.Add(
-				ctx,
-				1,
-				metric.WithAttributes(
-					p.signalTypeAttr(),
-					tenantAttribute,
-					signalResponseStatusCodeAttr,
-				),
-			)
+			p.proxyRequestsMetricAdd(ctx, tenant, signalResponseStatusCodeAttr)
 
 			logger.Debug(
 				ctx,
@@ -398,14 +414,7 @@ func (p *Processor[T]) send(
 	span.SetAttributes(signalResponseStatusCodeAttr)
 	span.SetStatus(codes.Ok, "sent successfully")
 
-	p.proxyLatencyMetric.Record(ctx,
-		time.Since(start).Milliseconds(),
-		metric.WithAttributes(
-			signalResponseStatusCodeAttr,
-			p.signalTypeAttr(),
-			signalTenantAttr,
-		),
-	)
+	p.proxyLatencyMetricRecord(ctx, tenant, time.Since(start).Milliseconds(), signalResponseStatusCodeAttr)
 
 	return *resp, nil
 }
