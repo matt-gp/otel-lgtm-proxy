@@ -110,6 +110,202 @@ func TestNew(t *testing.T) {
 	}
 }
 
+func TestExtractTenantFromResource(t *testing.T) {
+	tests := []struct {
+		name           string
+		resource       *logpb.ResourceLogs
+		config         *config.Config
+		expectedTenant string
+		expectModified bool // whether the resource should be modified with default tenant
+	}{
+		{
+			name: "extract from primary label",
+			resource: &logpb.ResourceLogs{
+				Resource: &resourcepb.Resource{
+					Attributes: []*commonpb.KeyValue{
+						{Key: "tenant.id", Value: &commonpb.AnyValue{Value: &commonpb.AnyValue_StringValue{StringValue: "tenant-a"}}},
+						{Key: "service.name", Value: &commonpb.AnyValue{Value: &commonpb.AnyValue_StringValue{StringValue: "my-service"}}},
+					},
+				},
+			},
+			config: &config.Config{
+				Tenant: config.Tenant{
+					Label:   "tenant.id",
+					Default: "default",
+				},
+			},
+			expectedTenant: "tenant-a",
+			expectModified: false,
+		},
+		{
+			name: "extract from first secondary label",
+			resource: &logpb.ResourceLogs{
+				Resource: &resourcepb.Resource{
+					Attributes: []*commonpb.KeyValue{
+						{Key: "tenantId", Value: &commonpb.AnyValue{Value: &commonpb.AnyValue_StringValue{StringValue: "tenant-b"}}},
+						{Key: "service.name", Value: &commonpb.AnyValue{Value: &commonpb.AnyValue_StringValue{StringValue: "my-service"}}},
+					},
+				},
+			},
+			config: &config.Config{
+				Tenant: config.Tenant{
+					Label:   "tenant.id",
+					Labels:  []string{"tenantId", "tenant_id"},
+					Default: "default",
+				},
+			},
+			expectedTenant: "tenant-b",
+			expectModified: false,
+		},
+		{
+			name: "extract from second secondary label",
+			resource: &logpb.ResourceLogs{
+				Resource: &resourcepb.Resource{
+					Attributes: []*commonpb.KeyValue{
+						{Key: "tenant_id", Value: &commonpb.AnyValue{Value: &commonpb.AnyValue_StringValue{StringValue: "tenant-c"}}},
+						{Key: "service.name", Value: &commonpb.AnyValue{Value: &commonpb.AnyValue_StringValue{StringValue: "my-service"}}},
+					},
+				},
+			},
+			config: &config.Config{
+				Tenant: config.Tenant{
+					Label:   "tenant.id",
+					Labels:  []string{"tenantId", "tenant_id"},
+					Default: "default",
+				},
+			},
+			expectedTenant: "tenant-c",
+			expectModified: false,
+		},
+		{
+			name: "use default tenant when no tenant attribute",
+			resource: &logpb.ResourceLogs{
+				Resource: &resourcepb.Resource{
+					Attributes: []*commonpb.KeyValue{
+						{Key: "service.name", Value: &commonpb.AnyValue{Value: &commonpb.AnyValue_StringValue{StringValue: "my-service"}}},
+					},
+				},
+			},
+			config: &config.Config{
+				Tenant: config.Tenant{
+					Label:   "tenant.id",
+					Default: "shared",
+				},
+			},
+			expectedTenant: "shared",
+			expectModified: true,
+		},
+		{
+			name: "return empty when no tenant and no default",
+			resource: &logpb.ResourceLogs{
+				Resource: &resourcepb.Resource{
+					Attributes: []*commonpb.KeyValue{
+						{Key: "service.name", Value: &commonpb.AnyValue{Value: &commonpb.AnyValue_StringValue{StringValue: "my-service"}}},
+					},
+				},
+			},
+			config: &config.Config{
+				Tenant: config.Tenant{
+					Label:   "tenant.id",
+					Default: "",
+				},
+			},
+			expectedTenant: "",
+			expectModified: false,
+		},
+		{
+			name: "primary label takes precedence over secondary labels",
+			resource: &logpb.ResourceLogs{
+				Resource: &resourcepb.Resource{
+					Attributes: []*commonpb.KeyValue{
+						{Key: "tenant.id", Value: &commonpb.AnyValue{Value: &commonpb.AnyValue_StringValue{StringValue: "primary-tenant"}}},
+						{Key: "tenantId", Value: &commonpb.AnyValue{Value: &commonpb.AnyValue_StringValue{StringValue: "secondary-tenant"}}},
+					},
+				},
+			},
+			config: &config.Config{
+				Tenant: config.Tenant{
+					Label:   "tenant.id",
+					Labels:  []string{"tenantId"},
+					Default: "default",
+				},
+			},
+			expectedTenant: "primary-tenant",
+			expectModified: false,
+		},
+		{
+			name: "empty primary label not configured",
+			resource: &logpb.ResourceLogs{
+				Resource: &resourcepb.Resource{
+					Attributes: []*commonpb.KeyValue{
+						{Key: "tenantId", Value: &commonpb.AnyValue{Value: &commonpb.AnyValue_StringValue{StringValue: "tenant-d"}}},
+					},
+				},
+			},
+			config: &config.Config{
+				Tenant: config.Tenant{
+					Label:   "",
+					Labels:  []string{"tenantId"},
+					Default: "default",
+				},
+			},
+			expectedTenant: "tenant-d",
+			expectModified: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			logger := noop.NewLoggerProvider().Logger("test")
+			meter := noopmetric.NewMeterProvider().Meter("test")
+			tracer := nooptrace.NewTracerProvider().Tracer("test")
+
+			getResource := func(rl *logpb.ResourceLogs) *resourcepb.Resource {
+				return rl.GetResource()
+			}
+			marshalResources := func(resources []*logpb.ResourceLogs) ([]byte, error) {
+				return []byte{}, nil
+			}
+
+			proc, err := New(
+				tt.config,
+				&config.Endpoint{Address: "http://localhost:3100"},
+				"logs",
+				&http.Client{},
+				logger,
+				meter,
+				tracer,
+				getResource,
+				marshalResources,
+			)
+			require.NoError(t, err)
+
+			originalAttrCount := len(tt.resource.Resource.Attributes)
+			tenant := proc.extractTenantFromResource(tt.resource)
+
+			assert.Equal(t, tt.expectedTenant, tenant)
+
+			if tt.expectModified {
+				// Should have added the tenant label to attributes
+				assert.Equal(t, originalAttrCount+1, len(tt.resource.Resource.Attributes))
+				// Verify the added attribute
+				found := false
+				for _, attr := range tt.resource.Resource.Attributes {
+					if attr.Key == tt.config.Tenant.Label {
+						assert.Equal(t, tt.expectedTenant, attr.GetValue().GetStringValue())
+						found = true
+						break
+					}
+				}
+				assert.True(t, found, "tenant label should be added to attributes")
+			} else {
+				// Should not have modified the attributes
+				assert.Equal(t, originalAttrCount, len(tt.resource.Resource.Attributes))
+			}
+		})
+	}
+}
+
 func TestPartition(t *testing.T) {
 	tests := []struct {
 		name            string
@@ -118,8 +314,26 @@ func TestPartition(t *testing.T) {
 		expectedTenants map[string]int // tenant -> number of resources
 	}{
 		{
-			name: "single tenant with primary label",
+			name:      "empty resources returns empty map",
+			resources: []*logpb.ResourceLogs{},
+			config: &config.Config{
+				Tenant: config.Tenant{
+					Label:   "tenant.id",
+					Default: "default",
+				},
+			},
+			expectedTenants: map[string]int{},
+		},
+		{
+			name: "single tenant groups all resources together",
 			resources: []*logpb.ResourceLogs{
+				{
+					Resource: &resourcepb.Resource{
+						Attributes: []*commonpb.KeyValue{
+							{Key: "tenant.id", Value: &commonpb.AnyValue{Value: &commonpb.AnyValue_StringValue{StringValue: "tenant-a"}}},
+						},
+					},
+				},
 				{
 					Resource: &resourcepb.Resource{
 						Attributes: []*commonpb.KeyValue{
@@ -142,11 +356,11 @@ func TestPartition(t *testing.T) {
 				},
 			},
 			expectedTenants: map[string]int{
-				"tenant-a": 2,
+				"tenant-a": 3,
 			},
 		},
 		{
-			name: "multiple tenants with primary label",
+			name: "multiple tenants partition resources correctly",
 			resources: []*logpb.ResourceLogs{
 				{
 					Resource: &resourcepb.Resource{
@@ -169,6 +383,20 @@ func TestPartition(t *testing.T) {
 						},
 					},
 				},
+				{
+					Resource: &resourcepb.Resource{
+						Attributes: []*commonpb.KeyValue{
+							{Key: "tenant.id", Value: &commonpb.AnyValue{Value: &commonpb.AnyValue_StringValue{StringValue: "tenant-c"}}},
+						},
+					},
+				},
+				{
+					Resource: &resourcepb.Resource{
+						Attributes: []*commonpb.KeyValue{
+							{Key: "tenant.id", Value: &commonpb.AnyValue{Value: &commonpb.AnyValue_StringValue{StringValue: "tenant-b"}}},
+						},
+					},
+				},
 			},
 			config: &config.Config{
 				Tenant: config.Tenant{
@@ -178,16 +406,31 @@ func TestPartition(t *testing.T) {
 			},
 			expectedTenants: map[string]int{
 				"tenant-a": 2,
-				"tenant-b": 1,
+				"tenant-b": 2,
+				"tenant-c": 1,
 			},
 		},
 		{
-			name: "fallback to secondary label",
+			name: "resources without tenant are skipped",
 			resources: []*logpb.ResourceLogs{
 				{
 					Resource: &resourcepb.Resource{
 						Attributes: []*commonpb.KeyValue{
-							{Key: "tenantId", Value: &commonpb.AnyValue{Value: &commonpb.AnyValue_StringValue{StringValue: "tenant-c"}}},
+							{Key: "tenant.id", Value: &commonpb.AnyValue{Value: &commonpb.AnyValue_StringValue{StringValue: "tenant-a"}}},
+						},
+					},
+				},
+				{
+					Resource: &resourcepb.Resource{
+						Attributes: []*commonpb.KeyValue{
+							{Key: "service.name", Value: &commonpb.AnyValue{Value: &commonpb.AnyValue_StringValue{StringValue: "my-service"}}},
+						},
+					},
+				},
+				{
+					Resource: &resourcepb.Resource{
+						Attributes: []*commonpb.KeyValue{
+							{Key: "tenant.id", Value: &commonpb.AnyValue{Value: &commonpb.AnyValue_StringValue{StringValue: "tenant-b"}}},
 						},
 					},
 				},
@@ -195,21 +438,28 @@ func TestPartition(t *testing.T) {
 			config: &config.Config{
 				Tenant: config.Tenant{
 					Label:   "tenant.id",
-					Labels:  []string{"tenantId", "tenant_id"},
-					Default: "default",
+					Default: "", // No default, so resource without tenant should be skipped
 				},
 			},
 			expectedTenants: map[string]int{
-				"tenant-c": 1,
+				"tenant-a": 1,
+				"tenant-b": 1,
 			},
 		},
 		{
-			name: "use default tenant when no tenant attribute",
+			name: "resources with default tenant are grouped",
 			resources: []*logpb.ResourceLogs{
 				{
 					Resource: &resourcepb.Resource{
 						Attributes: []*commonpb.KeyValue{
-							{Key: "service.name", Value: &commonpb.AnyValue{Value: &commonpb.AnyValue_StringValue{StringValue: "my-service"}}},
+							{Key: "service.name", Value: &commonpb.AnyValue{Value: &commonpb.AnyValue_StringValue{StringValue: "service-1"}}},
+						},
+					},
+				},
+				{
+					Resource: &resourcepb.Resource{
+						Attributes: []*commonpb.KeyValue{
+							{Key: "service.name", Value: &commonpb.AnyValue{Value: &commonpb.AnyValue_StringValue{StringValue: "service-2"}}},
 						},
 					},
 				},
@@ -221,27 +471,8 @@ func TestPartition(t *testing.T) {
 				},
 			},
 			expectedTenants: map[string]int{
-				"shared": 1,
+				"shared": 2,
 			},
-		},
-		{
-			name: "skip resource when no tenant and no default",
-			resources: []*logpb.ResourceLogs{
-				{
-					Resource: &resourcepb.Resource{
-						Attributes: []*commonpb.KeyValue{
-							{Key: "service.name", Value: &commonpb.AnyValue{Value: &commonpb.AnyValue_StringValue{StringValue: "my-service"}}},
-						},
-					},
-				},
-			},
-			config: &config.Config{
-				Tenant: config.Tenant{
-					Label:   "tenant.id",
-					Default: "",
-				},
-			},
-			expectedTenants: map[string]int{},
 		},
 	}
 
