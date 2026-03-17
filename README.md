@@ -301,7 +301,7 @@ func (h *Handlers) Logs(w http.ResponseWriter, r *http.Request) {
 **Processor Package (`internal/processor/`):**
 - `New[T ResourceData]()` - Create generic processor with signal-specific callbacks
 - `Partition(ctx, resources)` - Partition resources by tenant from resource attributes
-- `Dispatch(ctx, tenantMap)` - Concurrent forwarding to backend with tenant headers
+- `Dispatch(ctx, tenantMap)` - Concurrent forwarding to backend with tenant headers; returns error if any backend responds with status >= 400
 - `send(ctx, tenant, resources)` - HTTP client with protobuf marshaling and metrics
 
 **Handler Package (`internal/handler/`):**
@@ -564,6 +564,19 @@ When forwarding data to observability backends:
 5. Content-Type is set to `application/x-protobuf`
 6. Original protobuf format is preserved with proper headers via `addHeaders()`
 
+### Error Handling
+
+The proxy implements robust error handling for backend responses:
+
+- **Success Responses (< 400)**: Data is successfully forwarded and metrics are recorded with the response status code
+- **Error Responses (>= 400)**: The proxy treats all HTTP status codes of 400 or higher as errors:
+  - An error is logged with the status code, tenant, and signal type
+  - The request is marked as failed in distributed tracing
+  - An error is returned to the caller, which may trigger retry logic in upstream collectors
+  - Metrics are still recorded with the error status code for observability
+
+This ensures that client errors (4xx) and server errors (5xx) from the backend are properly surfaced and can be monitored through the proxy's own telemetry.
+
 ## Observability
 
 The service exposes metrics about its operation:
@@ -802,7 +815,7 @@ go tool cover -func=coverage.out
 **Processor Tests (`internal/processor/processor_test.go`):**
 - `TestNew` - Processor creation with various configurations
 - `TestPartition` - Tenant partitioning logic with primary/fallback labels and defaults
-- `TestDispatch` - Concurrent request dispatching to multiple tenants
+- `TestDispatch` - Concurrent request dispatching to multiple tenants with error handling for HTTP status >= 400
 - `TestSend` - Individual HTTP request handling with error scenarios
 
 **Handler Tests (`internal/handler/handlers_test.go`):**

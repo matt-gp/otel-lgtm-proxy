@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"slices"
 	"strconv"
-	"sync"
 	"time"
 
 	"github.com/matt-gp/otel-lgtm-proxy/internal/config"
@@ -26,6 +25,7 @@ import (
 	metricpb "go.opentelemetry.io/proto/otlp/metrics/v1"
 	resourcepb "go.opentelemetry.io/proto/otlp/resource/v1"
 	tracepb "go.opentelemetry.io/proto/otlp/trace/v1"
+	"golang.org/x/sync/errgroup"
 )
 
 // Client is an interface for making HTTP requests.
@@ -197,7 +197,7 @@ func (p *Processor[T]) Partition(ctx context.Context, resources []T) map[string]
 
 // Dispatch sends all the requests to the target.
 func (p *Processor[T]) Dispatch(ctx context.Context, tenantMap map[string][]T) error {
-	wg := sync.WaitGroup{}
+	errGroup, ctx := errgroup.WithContext(ctx)
 
 	for tenant, resources := range tenantMap {
 		ctx, span := p.tracer.Start(
@@ -210,13 +210,8 @@ func (p *Processor[T]) Dispatch(ctx context.Context, tenantMap map[string][]T) e
 		)
 		defer span.End()
 
-		wg.Add(1)
-
-		go func(tenant string, resources []T) {
-			defer wg.Done()
-
+		errGroup.Go(func() error {
 			tenantAttribute := attribute.String("signal.tenant", tenant)
-
 			resp, err := p.send(ctx, tenant, resources)
 			if err != nil {
 				p.proxyRecordsMetricAdd(ctx, tenant, int64(len(resources)), nil)
@@ -230,7 +225,7 @@ func (p *Processor[T]) Dispatch(ctx context.Context, tenantMap map[string][]T) e
 
 				span.RecordError(err)
 				span.SetStatus(codes.Error, "failed to send")
-				return
+				return err
 			}
 
 			signalResponseStatusCodeAttr := attribute.String(
@@ -250,6 +245,20 @@ func (p *Processor[T]) Dispatch(ctx context.Context, tenantMap map[string][]T) e
 				tenant,
 				[]attribute.KeyValue{signalResponseStatusCodeAttr},
 			)
+
+			if resp.StatusCode >= http.StatusBadRequest {
+				logger.Error(
+					ctx,
+					p.logger,
+					fmt.Sprintf("received non-success status code: %d", resp.StatusCode),
+					p.signalTypeLogAttr(),
+					log.KeyValueFromAttribute(tenantAttribute),
+					log.KeyValueFromAttribute(signalResponseStatusCodeAttr),
+				)
+
+				span.SetStatus(codes.Error, fmt.Sprintf("received non-success status code: %d", resp.StatusCode))
+				return fmt.Errorf("received non-success status code: %d", resp.StatusCode)
+			}
 
 			logger.Debug(
 				ctx,
@@ -273,12 +282,11 @@ func (p *Processor[T]) Dispatch(ctx context.Context, tenantMap map[string][]T) e
 			)
 
 			span.SetStatus(codes.Ok, "sent successfully")
-		}(tenant, resources)
+			return nil
+		})
 	}
 
-	wg.Wait()
-
-	return nil
+	return errGroup.Wait()
 }
 
 // send sends an individual request to the target.

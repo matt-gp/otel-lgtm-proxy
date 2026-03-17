@@ -580,6 +580,126 @@ func TestDispatch(t *testing.T) {
 			},
 			wantErr: false,
 		},
+		{
+			name: "http 400 bad request should return error",
+			tenantMap: map[string][]*logpb.ResourceLogs{
+				"tenant-a": {
+					{
+						Resource: &resourcepb.Resource{
+							Attributes: []*commonpb.KeyValue{
+								{Key: "tenant.id", Value: &commonpb.AnyValue{Value: &commonpb.AnyValue_StringValue{StringValue: "tenant-a"}}},
+							},
+						},
+					},
+				},
+			},
+			mockResponses: []struct {
+				statusCode int
+				body       string
+				err        error
+			}{
+				{statusCode: http.StatusBadRequest, body: "bad request", err: nil},
+			},
+			wantErr: true,
+		},
+		{
+			name: "http 404 not found should return error",
+			tenantMap: map[string][]*logpb.ResourceLogs{
+				"tenant-a": {
+					{
+						Resource: &resourcepb.Resource{
+							Attributes: []*commonpb.KeyValue{
+								{Key: "tenant.id", Value: &commonpb.AnyValue{Value: &commonpb.AnyValue_StringValue{StringValue: "tenant-a"}}},
+							},
+						},
+					},
+				},
+			},
+			mockResponses: []struct {
+				statusCode int
+				body       string
+				err        error
+			}{
+				{statusCode: http.StatusNotFound, body: "not found", err: nil},
+			},
+			wantErr: true,
+		},
+		{
+			name: "http 500 internal server error should return error",
+			tenantMap: map[string][]*logpb.ResourceLogs{
+				"tenant-a": {
+					{
+						Resource: &resourcepb.Resource{
+							Attributes: []*commonpb.KeyValue{
+								{Key: "tenant.id", Value: &commonpb.AnyValue{Value: &commonpb.AnyValue_StringValue{StringValue: "tenant-a"}}},
+							},
+						},
+					},
+				},
+			},
+			mockResponses: []struct {
+				statusCode int
+				body       string
+				err        error
+			}{
+				{statusCode: http.StatusInternalServerError, body: "server error", err: nil},
+			},
+			wantErr: true,
+		},
+		{
+			name: "http 503 service unavailable should return error",
+			tenantMap: map[string][]*logpb.ResourceLogs{
+				"tenant-a": {
+					{
+						Resource: &resourcepb.Resource{
+							Attributes: []*commonpb.KeyValue{
+								{Key: "tenant.id", Value: &commonpb.AnyValue{Value: &commonpb.AnyValue_StringValue{StringValue: "tenant-a"}}},
+							},
+						},
+					},
+				},
+			},
+			mockResponses: []struct {
+				statusCode int
+				body       string
+				err        error
+			}{
+				{statusCode: http.StatusServiceUnavailable, body: "service unavailable", err: nil},
+			},
+			wantErr: true,
+		},
+		{
+			name: "multiple tenants with one failing should return error",
+			tenantMap: map[string][]*logpb.ResourceLogs{
+				"tenant-a": {
+					{
+						Resource: &resourcepb.Resource{
+							Attributes: []*commonpb.KeyValue{
+								{Key: "tenant.id", Value: &commonpb.AnyValue{Value: &commonpb.AnyValue_StringValue{StringValue: "tenant-a"}}},
+							},
+						},
+					},
+				},
+				"tenant-b": {
+					{
+						Resource: &resourcepb.Resource{
+							Attributes: []*commonpb.KeyValue{
+								{Key: "tenant.id", Value: &commonpb.AnyValue{Value: &commonpb.AnyValue_StringValue{StringValue: "tenant-b"}}},
+							},
+						},
+					},
+				},
+			},
+			mockResponses: []struct {
+				statusCode int
+				body       string
+				err        error
+			}{
+				{statusCode: http.StatusOK, body: "ok", err: nil},
+				{statusCode: http.StatusBadRequest, body: "bad request", err: nil},
+			},
+			wantErr: true,
+		},
 	}
 
 	for _, tt := range tests {
