@@ -295,7 +295,25 @@ if err != nil {
     logger.Error("Failed to get data", "id", id, "error", err)
     return nil, err
 }
+
+// Good: Check HTTP status codes and return errors for failures
+if resp.StatusCode >= http.StatusBadRequest {
+    logger.Error(
+        ctx,
+        logger,
+        fmt.Sprintf("received non-success status code: %d", resp.StatusCode),
+        log.String("status_code", strconv.Itoa(resp.StatusCode)),
+    )
+    return fmt.Errorf("received non-success status code: %d", resp.StatusCode)
+}
 ```
+
+**HTTP Error Handling:**
+- Treat all HTTP status codes >= 400 as errors
+- Log errors with relevant context (tenant, signal type, status code)
+- Record errors in distributed tracing spans
+- Return errors to enable retry logic in upstream systems
+- Always record metrics even for failed requests
 
 ### Logging
 
