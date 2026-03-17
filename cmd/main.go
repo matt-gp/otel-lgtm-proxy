@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -155,30 +156,30 @@ func main() {
 	}
 
 	go func() {
-		if cert.TLSEnabled(&cfg.HTTP.TLS) {
-			logger.Info(
-				ctx,
-				loggingProvider,
-				"starting server",
-				log.KeyValue{Key: "address", Value: log.StringValue(cfg.HTTP.Address)},
-				log.KeyValue{Key: "tls_enabled", Value: log.BoolValue(true)},
-			)
-			if err := server.ListenAndServeTLS("", ""); err != nil {
-				logger.Error(ctx, loggingProvider, err.Error())
-				os.Exit(1)
-			}
+		tlsEnabled := cert.TLSEnabled(&cfg.HTTP.TLS)
+		logger.Info(
+			ctx,
+			loggingProvider,
+			"starting server",
+			log.KeyValue{Key: "address", Value: log.StringValue(cfg.HTTP.Address)},
+			log.KeyValue{Key: "tls_enabled", Value: log.BoolValue(tlsEnabled)},
+		)
+
+		if tlsEnabled {
+			err = server.ListenAndServeTLS("", "")
 		} else {
-			logger.Info(
+			err = server.ListenAndServe()
+		}
+
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
+			logger.Error(
 				ctx,
 				loggingProvider,
-				"starting server",
+				err.Error(),
 				log.KeyValue{Key: "address", Value: log.StringValue(cfg.HTTP.Address)},
-				log.KeyValue{Key: "tls_enabled", Value: log.BoolValue(false)},
+				log.KeyValue{Key: "tls_enabled", Value: log.BoolValue(tlsEnabled)},
 			)
-			if err := server.ListenAndServe(); err != nil {
-				logger.Error(ctx, loggingProvider, err.Error())
-				os.Exit(1)
-			}
+			os.Exit(1)
 		}
 	}()
 
@@ -190,6 +191,6 @@ func main() {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.TimeoutShutdown)
 	defer cancel()
 	if err := server.Shutdown(shutdownCtx); err != nil {
-		logger.Error(ctx, loggingProvider, fmt.Sprintf("http close error: %v", err))
+		logger.Error(ctx, loggingProvider, fmt.Sprintf("http close error: %v", err), log.KeyValue{Key: "address", Value: log.StringValue(cfg.HTTP.Address)})
 	}
 }
