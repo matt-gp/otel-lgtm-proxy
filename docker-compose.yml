@@ -3,7 +3,7 @@ services:
   loki:
     image: grafana/loki:3.0.0
     ports:
-      - "3100:3100"
+      - "3100"
     command: -config.file=/etc/loki/local-config.yaml
     volumes:
       - ./test/loki-config.yaml:/etc/loki/local-config.yaml
@@ -18,7 +18,7 @@ services:
   mimir:
     image: grafana/mimir:2.10.0
     ports:
-      - "8080:8080"  
+      - "8080"  
     command: 
       - -config.file=/etc/mimir.yaml
       - -target=all
@@ -35,8 +35,8 @@ services:
   tempo:
     image: grafana/tempo:2.2.0
     ports:
-      - "3200:3200"
-      - "3201:3201"  # OTLP HTTP receiver
+      - "3200"
+      - "3201"  # OTLP HTTP receiver
     command: 
       - -config.file=/etc/tempo.yaml
     volumes:
@@ -77,7 +77,7 @@ services:
       context: .
       dockerfile: Dockerfile
     ports:
-      - "8443:8443"  # Main HTTP server for all OTLP endpoints
+      - "8443"  # Main HTTP server for all OTLP endpoints
     environment:
       - LOG_LEVEL=DEBUG
       - HTTP_LISTEN_ADDRESS=:8443
@@ -109,9 +109,9 @@ services:
   otel-collector:
     image: otel/opentelemetry-collector-contrib:0.88.0
     ports:
-      - "4317:4317"  # OTLP gRPC receiver
-      - "4318:4318"  # OTLP HTTP receiver
-      - "13133:13133"  # Health check endpoint
+      - "4317"  # OTLP gRPC receiver
+      - "4318"  # OTLP HTTP receiver
+      - "13133"  # Health check endpoint
     volumes:
       - ./test/otel-collector-config.yaml:/etc/otelcol-contrib/otel-collector-config.yaml
     command: ["--config=/etc/otelcol-contrib/otel-collector-config.yaml"]
