@@ -17,9 +17,6 @@ import (
 // Handlers contains the dependencies needed for all OTLP signal handlers.
 type Handlers struct {
 	config           *config.Config
-	logsClient       processor.Client
-	metricsClient    processor.Client
-	tracesClient     processor.Client
 	logger           log.Logger
 	meter            metric.Meter
 	tracer           trace.Tracer
@@ -109,9 +106,6 @@ func New(
 
 	return &Handlers{
 		config:           config,
-		logsClient:       logsClient,
-		metricsClient:    metricsClient,
-		tracesClient:     tracesClient,
 		logger:           logger,
 		meter:            meter,
 		tracer:           tracer,
