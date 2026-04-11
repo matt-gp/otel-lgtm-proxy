@@ -7,7 +7,7 @@ RUN apk add --no-cache bash curl openssl
 WORKDIR /app
 
 # Copy the test scripts
-COPY test/send-*.sh ./
+COPY send-*.sh ./
 RUN chmod +x send-*.sh
 
 # Default command
