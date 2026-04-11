@@ -1,0 +1,23 @@
+# Git and CI/CD
+.git
+.github
+.gitignore
+
+# Documentation
+README.md
+CONTRIBUTING.md
+LICENSE
+
+# Development tools
+.golangci.yml
+
+# Test files and infrastructure
+test/
+**/*_test.go
+
+# Docker files (not needed in build)
+docker-compose.yml
+Dockerfile
+
+# Compiled binaries from local builds
+main

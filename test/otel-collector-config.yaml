@@ -18,7 +18,7 @@ processors:
 
 exporters:
   otlphttp:
-    endpoint: http://otel-proxy:8443
+    endpoint: http://otel-lgtm-proxy:8443
     compression: none
     retry_on_failure:
       enabled: true
