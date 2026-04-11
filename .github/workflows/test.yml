@@ -87,4 +87,35 @@ jobs:
           name: coverage-report-${{ github.run_id }}
           path: ${{ steps.coverage.outputs.coverage_file }}
           retention-days: ${{ github.ref == 'refs/heads/main' && 90 || 30 }}
+
+  docker-build:
+    runs-on: [ubuntu-latest]
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          load: true
+          tags: otel-lgtm-proxy:test
+
+      - name: Test Docker image runs
+        run: |
+          docker run --rm -d --name test-container -p 8443:8443 \
+            -e HTTP_LISTEN_ADDRESS=:8443 \
+            -e OLP_LOGS_ADDRESS=http://localhost:3100/otlp/v1/logs \
+            -e OLP_METRICS_ADDRESS=http://localhost:8080/otlp/v1/metrics \
+            -e OLP_TRACES_ADDRESS=http://localhost:3201/v1/traces \
+            otel-lgtm-proxy:test
+          sleep 3
+          curl -f http://localhost:8443/health || (docker logs test-container && exit 1)
+
+      - name: Cleanup container
+        if: always()
+        run: docker stop test-container && docker rm test-container || true
         
