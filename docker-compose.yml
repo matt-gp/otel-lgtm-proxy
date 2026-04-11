@@ -119,8 +119,8 @@ services:
   # Test Client using bash scripts - sends all telemetry types
   test-client:
     build:
-      context: .
-      dockerfile: test/Dockerfile
+      context: ./test
+      dockerfile: Dockerfile
     environment:
       - OTEL_COLLECTOR_ENDPOINT=http://otel-collector:4318
       - TENANTS=tenant-a,tenant-b
