@@ -72,7 +72,7 @@ services:
       retries: 10
 
   # Your otel-lgtm-proxy
-  otel-proxy:
+  otel-lgtm-proxy:
     build:
       context: .
       dockerfile: Dockerfile
@@ -131,5 +131,5 @@ services:
     depends_on:
       otel-collector:
         condition: service_started
-      otel-proxy:
+      otel-lgtm-proxy:
         condition: service_healthy
