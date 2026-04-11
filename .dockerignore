@@ -7,6 +7,8 @@
 README.md
 CONTRIBUTING.md
 LICENSE
+CODEOWNERS
+AGENTS.md
 
 # Development tools
 .golangci.yml

@@ -31,7 +31,7 @@ type Endpoint struct {
 	Address string        `env:"ADDRESS"`
 	Headers string        `env:"HEADERS" envDefault:""`
 	Timeout time.Duration `env:"TIMEOUT" envDefault:"15s"`
-	TLS     TLSConfig     `                               envPrefix:"TLS_"`
+	TLS     TLSConfig     `envPrefix:"TLS_"`
 }
 
 // TLSConfig represents the configuration for TLS.
