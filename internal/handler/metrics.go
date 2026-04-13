@@ -14,12 +14,10 @@ import (
 
 // Metrics handles incoming OTLP metric requests.
 func (h *Handlers) Metrics(w http.ResponseWriter, r *http.Request) {
-	ctx, span := h.tracer.Start(
-		r.Context(),
-		"Handlers.Metrics",
-		trace.WithAttributes(attribute.String("signal.type", "metrics")),
-	)
+	ctx := r.Context()
+	span := trace.SpanFromContext(ctx)
 	defer span.End()
+	span.SetAttributes(attribute.String("signal.type", "metrics"))
 
 	// Unmarshal the incoming metric data
 	data, err := proto.Unmarshal(r, &metricpb.MetricsData{})
