@@ -2,9 +2,13 @@
 package handler
 
 import (
+	"crypto/tls"
+	"net/http"
+
 	"github.com/matt-gp/otel-lgtm-proxy/internal/config"
 	"github.com/matt-gp/otel-lgtm-proxy/internal/processor"
 	"github.com/matt-gp/otel-lgtm-proxy/internal/util/proto"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel/log"
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
@@ -17,6 +21,7 @@ import (
 // Handlers contains the dependencies needed for all OTLP signal handlers.
 type Handlers struct {
 	config           *config.Config
+	router           *http.ServeMux
 	logger           log.Logger
 	meter            metric.Meter
 	tracer           trace.Tracer
@@ -28,6 +33,7 @@ type Handlers struct {
 // New creates a new Handlers instance.
 func New(
 	config *config.Config,
+	router *http.ServeMux,
 	logsClient processor.Client,
 	metricsClient processor.Client,
 	tracesClient processor.Client,
@@ -106,6 +112,7 @@ func New(
 
 	return &Handlers{
 		config:           config,
+		router:           router,
 		logger:           logger,
 		meter:            meter,
 		tracer:           tracer,
@@ -113,4 +120,19 @@ func New(
 		metricsProcessor: *metricsProcessor,
 		tracesProcessor:  *tracesProcessor,
 	}, nil
+}
+
+// Register registers the given handler function for the specified pattern on the provided router.
+func (h *Handlers) Register(pattern string, handlerFunc func(http.ResponseWriter, *http.Request)) {
+	h.router.Handle(pattern, otelhttp.NewHandler(http.HandlerFunc(handlerFunc), pattern))
+}
+
+// NewServer creates a new HTTP server with the provided TLS configuration.
+func (h *Handlers) NewServer(tlsConfig *tls.Config) *http.Server {
+	return &http.Server{
+		MaxHeaderBytes: 1 << 20, // 1MB max header size
+		Addr:           h.config.HTTP.Address,
+		Handler:        h.router,
+		TLSConfig:      tlsConfig,
+	}
 }

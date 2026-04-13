@@ -14,12 +14,10 @@ import (
 
 // Traces handles incoming OTLP trace requests.
 func (h *Handlers) Traces(w http.ResponseWriter, r *http.Request) {
-	ctx, span := h.tracer.Start(
-		r.Context(),
-		"Handlers.Traces",
-		trace.WithAttributes(attribute.String("signal.type", "traces")),
-	)
+	ctx := r.Context()
+	span := trace.SpanFromContext(ctx)
 	defer span.End()
+	span.SetAttributes(attribute.String("signal.type", "traces"))
 
 	// Unmarshal the incoming trace data
 	data, err := proto.Unmarshal(r, &tracepb.TracesData{})

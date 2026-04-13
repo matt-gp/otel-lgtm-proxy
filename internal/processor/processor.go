@@ -165,15 +165,6 @@ func (p *Processor[T]) proxyLatencyMetricRecord(ctx context.Context, tenant stri
 
 // Partition partitions the resources by tenant.
 func (p *Processor[T]) Partition(ctx context.Context, resources []T) map[string][]T {
-	ctx, span := p.tracer.Start(
-		ctx,
-		fmt.Sprintf("%s.partition", p.signalType),
-		trace.WithAttributes(
-			p.signalTypeAttr(),
-		),
-	)
-	defer span.End()
-
 	tenantMap := make(map[string][]T)
 
 	for _, resourceData := range resources {
@@ -191,25 +182,13 @@ func (p *Processor[T]) Partition(ctx context.Context, resources []T) map[string]
 		tenantMap[tenant] = append(tenantMap[tenant], resourceData)
 	}
 
-	span.SetStatus(codes.Ok, "data partitioned")
 	return tenantMap
 }
 
 // Dispatch sends all the requests to the target.
 func (p *Processor[T]) Dispatch(ctx context.Context, tenantMap map[string][]T) error {
 	errGroup, ctx := errgroup.WithContext(ctx)
-
 	for tenant, resources := range tenantMap {
-		ctx, span := p.tracer.Start(
-			ctx,
-			fmt.Sprintf("%s.dispatch", p.signalType),
-			trace.WithAttributes(
-				p.signalTypeAttr(),
-				attribute.String("signal.tenant", tenant),
-			),
-		)
-		defer span.End()
-
 		errGroup.Go(func() error {
 			tenantAttribute := attribute.String("signal.tenant", tenant)
 			resp, err := p.send(ctx, tenant, resources)
@@ -223,8 +202,6 @@ func (p *Processor[T]) Dispatch(ctx context.Context, tenantMap map[string][]T) e
 					p.signalTypeLogAttr(),
 				)
 
-				span.RecordError(err)
-				span.SetStatus(codes.Error, "failed to send")
 				return err
 			}
 
@@ -256,7 +233,6 @@ func (p *Processor[T]) Dispatch(ctx context.Context, tenantMap map[string][]T) e
 					log.KeyValueFromAttribute(signalResponseStatusCodeAttr),
 				)
 
-				span.SetStatus(codes.Error, fmt.Sprintf("received non-success status code: %d", resp.StatusCode))
 				return fmt.Errorf("received non-success status code: %d", resp.StatusCode)
 			}
 
@@ -281,7 +257,6 @@ func (p *Processor[T]) Dispatch(ctx context.Context, tenantMap map[string][]T) e
 				log.KeyValueFromAttribute(signalResponseStatusCodeAttr),
 			)
 
-			span.SetStatus(codes.Ok, "sent successfully")
 			return nil
 		})
 	}
@@ -298,9 +273,8 @@ func (p *Processor[T]) send(
 	start := time.Now()
 
 	signalTenantAttr := attribute.String("signal.tenant", tenant)
-
 	ctx, span := p.tracer.Start(ctx,
-		fmt.Sprintf("%s.send", p.signalType),
+		"processor.send",
 		trace.WithAttributes(
 			p.signalTypeAttr(),
 			signalTenantAttr,
