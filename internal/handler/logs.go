@@ -14,12 +14,10 @@ import (
 
 // Logs handles incoming OTLP log requests.
 func (h *Handlers) Logs(w http.ResponseWriter, r *http.Request) {
-	ctx, span := h.tracer.Start(
-		r.Context(),
-		"Handlers.Logs",
-		trace.WithAttributes(attribute.String("signal.type", "logs")),
-	)
+	ctx := r.Context()
+	span := trace.SpanFromContext(ctx)
 	defer span.End()
+	span.SetAttributes(attribute.String("signal.type", "logs"))
 
 	// Unmarshal the incoming log data
 	data, err := proto.Unmarshal(r, &logpb.LogsData{})

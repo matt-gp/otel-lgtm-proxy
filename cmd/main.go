@@ -17,7 +17,6 @@ import (
 	"github.com/matt-gp/otel-lgtm-proxy/internal/logger"
 	"github.com/matt-gp/otel-lgtm-proxy/internal/otel"
 	"github.com/matt-gp/otel-lgtm-proxy/internal/util/cert"
-	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel/log"
 )
 
@@ -58,6 +57,7 @@ func main() {
 	// Initialize handlers
 	h, err := handler.New(
 		cfg,
+		http.NewServeMux(),
 		&http.Client{Timeout: cfg.Logs.Timeout},
 		&http.Client{Timeout: cfg.Metrics.Timeout},
 		&http.Client{Timeout: cfg.Traces.Timeout},
@@ -70,16 +70,15 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Initialize HTTP router
-	router := http.NewServeMux()
-
 	// Health check endpoint
-	router.HandleFunc("GET /health", func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		if _, err := w.Write([]byte("OK")); err != nil {
-			logger.Error(ctx, loggingProvider, err.Error())
-		}
-	})
+	healthEndpoint := "/health"
+	logger.Info(
+		ctx,
+		loggingProvider,
+		"registering health check endpoint",
+		log.KeyValue{Key: "endpoint", Value: log.StringValue(healthEndpoint)},
+	)
+	h.Register("GET "+healthEndpoint, h.Health)
 
 	// register the logs handler.
 	logsEndpoint := "/v1/logs"
@@ -89,7 +88,7 @@ func main() {
 		"receiving logs",
 		log.KeyValue{Key: "endpoint", Value: log.StringValue(logsEndpoint)},
 	)
-	router.HandleFunc("POST "+logsEndpoint, h.Logs)
+	h.Register("POST "+logsEndpoint, h.Logs)
 
 	// register the metrics handler.
 	metricsEndpoint := "/v1/metrics"
@@ -99,7 +98,7 @@ func main() {
 		"receiving metrics",
 		log.KeyValue{Key: "endpoint", Value: log.StringValue(metricsEndpoint)},
 	)
-	router.HandleFunc("POST "+metricsEndpoint, h.Metrics)
+	h.Register("POST "+metricsEndpoint, h.Metrics)
 
 	// register the traces handler.
 	tracesEndpoint := "/v1/traces"
@@ -109,7 +108,7 @@ func main() {
 		"receiving traces",
 		log.KeyValue{Key: "endpoint", Value: log.StringValue(tracesEndpoint)},
 	)
-	router.HandleFunc("POST "+tracesEndpoint, h.Traces)
+	h.Register("POST "+tracesEndpoint, h.Traces)
 
 	// Initialize TLS configuration
 	tlsConfig := &tls.Config{
@@ -148,12 +147,8 @@ func main() {
 		tlsConfig.ClientAuth = cert.StringClientAuthType(cfg.HTTP.TLS.ClientAuthType)
 	}
 
-	server := http.Server{
-		MaxHeaderBytes: 1 << 20, // 1MB max header size
-		Addr:           cfg.HTTP.Address,
-		Handler:        otelhttp.NewHandler(router, "otel-lgtm-proxy"),
-		TLSConfig:      tlsConfig,
-	}
+	// Create new HTTP server with the provided TLS configuration.
+	server := h.NewServer(tlsConfig)
 
 	go func() {
 		tlsEnabled := cert.TLSEnabled(&cfg.HTTP.TLS)
