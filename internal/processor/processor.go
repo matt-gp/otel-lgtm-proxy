@@ -35,6 +35,9 @@ type Client interface {
 	Do(req *http.Request) (*http.Response, error)
 }
 
+// Ensure that http.Client implements the Client interface.
+var _ Client = (*http.Client)(nil)
+
 // ResourceData is an interface for OTLP resource types.
 type ResourceData interface {
 	*logpb.ResourceLogs | *metricpb.ResourceMetrics | *tracepb.ResourceSpans
