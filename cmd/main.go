@@ -20,6 +20,28 @@ import (
 	"go.opentelemetry.io/otel/log"
 )
 
+type logKeyValue string
+
+const (
+	// LogKeyValueServiceName is the log key for the service name.
+	LogKeyValueServiceName logKeyValue = "service_name"
+
+	// LogKeyValueServiceVersion is the log key for the service version.
+	LogKeyValueServiceVersion logKeyValue = "service_version"
+
+	// LogKeyValueEndpoint is the log key for the HTTP endpoint.
+	LogKeyValueEndpoint logKeyValue = "endpoint"
+
+	// LogKeyValueError is the log key for error messages.
+	LogKeyValueError logKeyValue = "error"
+
+	// LogKeyValueAddress is the log key for network addresses.
+	LogKeyValueAddress logKeyValue = "address"
+
+	// LogKeyValueTLSEnabled is the log key for TLS enabled status.
+	LogKeyValueTLSEnabled logKeyValue = "tls_enabled"
+)
+
 func main() {
 	// Initialize context
 	ctx := context.Background()
@@ -46,8 +68,8 @@ func main() {
 		ctx,
 		loggingProvider,
 		"Starting application",
-		log.KeyValue{Key: "service_name", Value: log.StringValue(cfg.Service.Name)},
-		log.KeyValue{Key: "service_version", Value: log.StringValue(cfg.Service.Version)},
+		log.KeyValue{Key: string(LogKeyValueServiceName), Value: log.StringValue(cfg.Service.Name)},
+		log.KeyValue{Key: string(LogKeyValueServiceVersion), Value: log.StringValue(cfg.Service.Version)},
 	)
 
 	// Initialize signal handling
@@ -76,7 +98,7 @@ func main() {
 		ctx,
 		loggingProvider,
 		"registering health check endpoint",
-		log.KeyValue{Key: "endpoint", Value: log.StringValue(healthEndpoint)},
+		log.KeyValue{Key: string(LogKeyValueEndpoint), Value: log.StringValue(healthEndpoint)},
 	)
 	h.Register("GET "+healthEndpoint, h.Health)
 
@@ -86,7 +108,7 @@ func main() {
 		ctx,
 		loggingProvider,
 		"receiving logs",
-		log.KeyValue{Key: "endpoint", Value: log.StringValue(logsEndpoint)},
+		log.KeyValue{Key: string(LogKeyValueEndpoint), Value: log.StringValue(logsEndpoint)},
 	)
 	h.Register("POST "+logsEndpoint, h.Logs)
 
@@ -96,7 +118,7 @@ func main() {
 		ctx,
 		loggingProvider,
 		"receiving metrics",
-		log.KeyValue{Key: "endpoint", Value: log.StringValue(metricsEndpoint)},
+		log.KeyValue{Key: string(LogKeyValueEndpoint), Value: log.StringValue(metricsEndpoint)},
 	)
 	h.Register("POST "+metricsEndpoint, h.Metrics)
 
@@ -106,7 +128,7 @@ func main() {
 		ctx,
 		loggingProvider,
 		"receiving traces",
-		log.KeyValue{Key: "endpoint", Value: log.StringValue(tracesEndpoint)},
+		log.KeyValue{Key: string(LogKeyValueEndpoint), Value: log.StringValue(tracesEndpoint)},
 	)
 	h.Register("POST "+tracesEndpoint, h.Traces)
 
@@ -123,7 +145,7 @@ func main() {
 				ctx,
 				loggingProvider,
 				"unable to read certificate or key file",
-				log.KeyValue{Key: "error", Value: log.StringValue(err.Error())},
+				log.KeyValue{Key: string(LogKeyValueError), Value: log.StringValue(err.Error())},
 			)
 			os.Exit(1)
 		}
@@ -135,7 +157,7 @@ func main() {
 				ctx,
 				loggingProvider,
 				"unable to read CA file",
-				log.KeyValue{Key: "error", Value: log.StringValue(err.Error())},
+				log.KeyValue{Key: string(LogKeyValueError), Value: log.StringValue(err.Error())},
 			)
 			os.Exit(1)
 		}
@@ -156,8 +178,8 @@ func main() {
 			ctx,
 			loggingProvider,
 			"starting server",
-			log.KeyValue{Key: "address", Value: log.StringValue(cfg.HTTP.Address)},
-			log.KeyValue{Key: "tls_enabled", Value: log.BoolValue(tlsEnabled)},
+			log.KeyValue{Key: string(LogKeyValueAddress), Value: log.StringValue(cfg.HTTP.Address)},
+			log.KeyValue{Key: string(LogKeyValueTLSEnabled), Value: log.BoolValue(tlsEnabled)},
 		)
 
 		if tlsEnabled {
@@ -171,8 +193,8 @@ func main() {
 				ctx,
 				loggingProvider,
 				err.Error(),
-				log.KeyValue{Key: "address", Value: log.StringValue(cfg.HTTP.Address)},
-				log.KeyValue{Key: "tls_enabled", Value: log.BoolValue(tlsEnabled)},
+				log.KeyValue{Key: string(LogKeyValueAddress), Value: log.StringValue(cfg.HTTP.Address)},
+				log.KeyValue{Key: string(LogKeyValueTLSEnabled), Value: log.BoolValue(tlsEnabled)},
 			)
 			os.Exit(1)
 		}
@@ -186,6 +208,6 @@ func main() {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.TimeoutShutdown)
 	defer cancel()
 	if err := server.Shutdown(shutdownCtx); err != nil {
-		logger.Error(ctx, loggingProvider, fmt.Sprintf("http close error: %v", err), log.KeyValue{Key: "address", Value: log.StringValue(cfg.HTTP.Address)})
+		logger.Error(ctx, loggingProvider, fmt.Sprintf("http close error: %v", err), log.KeyValue{Key: string(LogKeyValueAddress), Value: log.StringValue(cfg.HTTP.Address)})
 	}
 }
