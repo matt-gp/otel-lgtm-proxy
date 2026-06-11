@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/matt-gp/otel-lgtm-proxy/internal/config"
+	"go.opentelemetry.io/contrib/processors/minsev"
 )
 
 func TestNewProvider(t *testing.T) {
@@ -279,6 +280,58 @@ func TestShutdown(t *testing.T) {
 	}
 }
 
+func TestGetLogLevelFromEnv(t *testing.T) {
+	tests := []struct {
+		name          string
+		setupEnvVars  map[string]string
+		expectedLevel minsev.Severity
+	}{
+		{
+			name:          "default log level",
+			setupEnvVars:  map[string]string{},
+			expectedLevel: minsev.SeverityInfo,
+		},
+		{
+			name: "OTEL_LOG_LEVEL uppercase precedence",
+			setupEnvVars: map[string]string{
+				"OTEL_LOG_LEVEL": "DEBUG",
+				"LOG_LEVEL":      "info",
+			},
+			expectedLevel: minsev.SeverityDebug,
+		},
+		{
+			name: "OTEL_LOG_LEVEL takes precedence",
+			setupEnvVars: map[string]string{
+				"OTEL_LOG_LEVEL": "debug",
+				"LOG_LEVEL":      "info",
+			},
+			expectedLevel: minsev.SeverityDebug,
+		},
+		{
+			name: "LOG_LEVEL used if OTEL_LOG_LEVEL not set",
+			setupEnvVars: map[string]string{
+				"LOG_LEVEL": "warn",
+			},
+			expectedLevel: minsev.SeverityWarn,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			clearOtelEnvVars()
+
+			for key, value := range tt.setupEnvVars {
+				t.Setenv(key, value)
+			}
+
+			level := getLogLevelFromEnv()
+			if level != tt.expectedLevel {
+				t.Errorf("Expected log level %v, got %v", tt.expectedLevel, level)
+			}
+		})
+	}
+}
+
 // clearOtelEnvVars clears all OpenTelemetry environment variables
 // This function is used for testing purposes
 func clearOtelEnvVars() {
@@ -299,6 +352,8 @@ func clearOtelEnvVars() {
 		"OTEL_BSP_SCHEDULE_DELAY",        // Batch span processor schedule delay
 		"OTEL_METRIC_EXPORT_INTERVAL",    // Metrics export interval
 		"OTEL_RESOURCE_ATTRIBUTES",       // Resource attributes (key=value,key2=value2)
+		"OTEL_LOG_LEVEL",                 // Custom log level for filtering logs
+		"LOG_LEVEL",                      // Custom log level for filtering logs (alternative)
 	}
 
 	// Remove each environment variable

@@ -482,6 +482,9 @@ export TENANT_DEFAULT=default                     # Used if no tenant attribute 
 
 This allows flexibility when working with different OpenTelemetry SDKs or legacy systems that may use different attribute naming conventions.
 
+### Logging
+Log level can be configured by either `LOG_LEVEL` or `OTEL_LOG_LEVEL`, `OTEL_LOG_LEVEL` takes precedence. If neither are specified `info` is used. Available log levels are `info`, `warn`, `error`, `debug` and `trace`.
+
 ### OpenTelemetry Configuration
 Standard OpenTelemetry environment variables are supported:
 - `OTEL_TRACES_EXPORTER` - Trace exporter (console, otlp, none)

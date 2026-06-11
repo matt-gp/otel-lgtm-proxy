@@ -3,17 +3,12 @@ package logger
 
 import (
 	"context"
-	"os"
 
 	"go.opentelemetry.io/otel/log"
 )
 
 // Debug emits a debug log using OpenTelemetry logging.
 func Debug(ctx context.Context, logger log.Logger, msg string, attrs ...log.KeyValue) {
-	if getLogLevelFromEnv() > log.SeverityDebug {
-		return
-	}
-
 	record := log.Record{}
 	record.SetSeverity(log.SeverityDebug)
 	record.SetBody(log.StringValue(msg))
@@ -25,10 +20,6 @@ func Debug(ctx context.Context, logger log.Logger, msg string, attrs ...log.KeyV
 
 // Trace emits a trace log using OpenTelemetry logging.
 func Trace(ctx context.Context, logger log.Logger, msg string, attrs ...log.KeyValue) {
-	if getLogLevelFromEnv() > log.SeverityTrace {
-		return
-	}
-
 	record := log.Record{}
 	record.SetSeverity(log.SeverityTrace)
 	record.SetBody(log.StringValue(msg))
@@ -40,10 +31,6 @@ func Trace(ctx context.Context, logger log.Logger, msg string, attrs ...log.KeyV
 
 // Info emits an info log using OpenTelemetry logging
 func Info(ctx context.Context, logger log.Logger, msg string, attrs ...log.KeyValue) {
-	if getLogLevelFromEnv() > log.SeverityInfo {
-		return
-	}
-
 	record := log.Record{}
 	record.SetSeverity(log.SeverityInfo)
 	record.SetBody(log.StringValue(msg))
@@ -55,10 +42,6 @@ func Info(ctx context.Context, logger log.Logger, msg string, attrs ...log.KeyVa
 
 // Warn emits a warning log using OpenTelemetry logging
 func Warn(ctx context.Context, logger log.Logger, msg string, attrs ...log.KeyValue) {
-	if getLogLevelFromEnv() > log.SeverityWarn {
-		return
-	}
-
 	record := log.Record{}
 	record.SetSeverity(log.SeverityWarn)
 	record.SetBody(log.StringValue(msg))
@@ -107,20 +90,4 @@ func Bool(key string, value bool) log.KeyValue {
 // Err creates an error log attribute with key "error".
 func Err(err error) log.KeyValue {
 	return log.KeyValue{Key: "error", Value: log.StringValue(err.Error())}
-}
-
-func getLogLevelFromEnv() log.Severity {
-	level := os.Getenv("LOG_LEVEL")
-	switch level {
-	case "DEBUG":
-		return log.SeverityDebug
-	case "INFO":
-		return log.SeverityInfo
-	case "WARN":
-		return log.SeverityWarn
-	case "ERROR":
-		return log.SeverityError
-	default:
-		return log.SeverityInfo
-	}
 }
