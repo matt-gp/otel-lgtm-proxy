@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/matt-gp/otel-lgtm-proxy/internal/config"
+	"go.opentelemetry.io/contrib/processors/minsev"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc"
 	"go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp"
@@ -190,8 +191,11 @@ func (p *Provider) initLogging(res *resource.Resource) error {
 	}
 
 	// Batch processor automatically configures from OTEL_BLRP_* environment variables
+	batchProc := log.NewBatchProcessor(logExporter)
+	filteredProc := minsev.NewLogProcessor(batchProc, getLogLevelFromEnv())
+
 	p.LoggerProvider = log.NewLoggerProvider(
-		log.WithProcessor(log.NewBatchProcessor(logExporter)),
+		log.WithProcessor(filteredProc),
 		log.WithResource(res),
 	)
 
@@ -338,4 +342,29 @@ func (p *Provider) initTracing(res *resource.Resource) error {
 	)
 
 	return nil
+}
+
+func getLogLevelFromEnv() minsev.Severity {
+	otelLogLevel := os.Getenv("OTEL_LOG_LEVEL")
+	logLevel := os.Getenv("LOG_LEVEL")
+
+	// OTEL_LOG_LEVEL takes precedence over LOG_LEVEL if both are set
+	if otelLogLevel != "" {
+		logLevel = otelLogLevel
+	}
+
+	switch strings.ToLower(logLevel) {
+	case "trace":
+		return minsev.SeverityTrace
+	case "debug":
+		return minsev.SeverityDebug
+	case "info":
+		return minsev.SeverityInfo
+	case "warn":
+		return minsev.SeverityWarn
+	case "error":
+		return minsev.SeverityError
+	default:
+		return minsev.SeverityInfo
+	}
 }

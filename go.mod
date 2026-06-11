@@ -26,6 +26,8 @@ require (
 
 require golang.org/x/sync v0.21.0
 
+require go.opentelemetry.io/contrib/processors/minsev v0.16.1 // indirect
+
 require (
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
