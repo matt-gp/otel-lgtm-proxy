@@ -13,12 +13,13 @@ import (
 
 	"github.com/matt-gp/otel-lgtm-proxy/internal/config"
 	"github.com/matt-gp/otel-lgtm-proxy/internal/logger"
-	"github.com/matt-gp/otel-lgtm-proxy/internal/util/cert"
 	"github.com/matt-gp/otel-lgtm-proxy/internal/util/request"
+	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/log"
 	"go.opentelemetry.io/otel/metric"
+	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
 	commonpb "go.opentelemetry.io/proto/otlp/common/v1"
 	logpb "go.opentelemetry.io/proto/otlp/logs/v1"
@@ -91,23 +92,12 @@ func New[T ResourceData](
 
 	// Create a histogram for the latency of requests processed by the proxy
 	proxyLatencyMetric, err := meter.Int64Histogram(
-		"otel_lgtm_proxy_request_duration_seconds",
+		"otel_lgtm_proxy_request_duration_ms",
 		metric.WithDescription("Latency of otel lgtm proxy requests"),
 		metric.WithUnit("ms"),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create otel lgtm proxy latency histogram: %w", err)
-	}
-
-	// Configure TLS if enabled
-	if cert.TLSEnabled(&endpoint.TLS) {
-		tlsConfig, err := cert.CreateTLSConfig(endpoint)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create TLS config: %w", err)
-		}
-		client.(*http.Client).Transport = &http.Transport{
-			TLSClientConfig: tlsConfig,
-		}
 	}
 
 	return &Processor[T]{
@@ -194,23 +184,16 @@ func (p *Processor[T]) Dispatch(ctx context.Context, tenantMap map[string][]T) e
 	for tenant, resources := range tenantMap {
 		errGroup.Go(func() error {
 			tenantAttribute := attribute.String("signal.tenant", tenant)
-			resp, err := p.send(ctx, tenant, resources)
+			statusCode, err := p.send(ctx, tenant, resources)
 			if err != nil {
 				p.proxyRecordsMetricAdd(ctx, tenant, int64(len(resources)), nil)
-
-				logger.Error(
-					ctx,
-					p.logger,
-					err.Error(),
-					p.signalTypeLogAttr(),
-				)
-
+				logger.Error(ctx, p.logger, err.Error(), p.signalTypeLogAttr())
 				return err
 			}
 
 			signalResponseStatusCodeAttr := attribute.String(
 				"signal.response.status.code",
-				strconv.Itoa(resp.StatusCode),
+				strconv.Itoa(statusCode),
 			)
 
 			p.proxyRecordsMetricAdd(
@@ -226,17 +209,17 @@ func (p *Processor[T]) Dispatch(ctx context.Context, tenantMap map[string][]T) e
 				[]attribute.KeyValue{signalResponseStatusCodeAttr},
 			)
 
-			if resp.StatusCode >= http.StatusBadRequest {
+			if statusCode >= http.StatusBadRequest {
 				logger.Error(
 					ctx,
 					p.logger,
-					fmt.Sprintf("received non-success status code: %d", resp.StatusCode),
+					fmt.Sprintf("received non-success status code: %d", statusCode),
 					p.signalTypeLogAttr(),
 					log.KeyValueFromAttribute(tenantAttribute),
 					log.KeyValueFromAttribute(signalResponseStatusCodeAttr),
 				)
 
-				return fmt.Errorf("received non-success status code: %d", resp.StatusCode)
+				return fmt.Errorf("received non-success status code: %d", statusCode)
 			}
 
 			logger.Debug(
@@ -272,7 +255,7 @@ func (p *Processor[T]) send(
 	ctx context.Context,
 	tenant string,
 	resources []T,
-) (http.Response, error) {
+) (int, error) {
 	start := time.Now()
 
 	signalTenantAttr := attribute.String("signal.tenant", tenant)
@@ -286,19 +269,11 @@ func (p *Processor[T]) send(
 	)
 	defer span.End()
 
-	// Marshal resources to bytes
 	body, err := p.marshalResources(resources)
 	if err != nil {
-		logger.Error(
-			ctx,
-			p.logger,
-			err.Error(),
-			p.signalTypeLogAttr(),
-			log.KeyValueFromAttribute(signalTenantAttr),
-		)
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "failed to marshal data")
-		return http.Response{}, fmt.Errorf("failed to marshal data: %w", err)
+		return 0, fmt.Errorf("failed to marshal data: %w", err)
 	}
 
 	req, err := http.NewRequestWithContext(
@@ -308,16 +283,9 @@ func (p *Processor[T]) send(
 		io.NopCloser(bytes.NewReader(body)),
 	)
 	if err != nil {
-		logger.Error(
-			ctx,
-			p.logger,
-			err.Error(),
-			p.signalTypeLogAttr(),
-			log.KeyValueFromAttribute(signalTenantAttr),
-		)
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "failed to create request")
-		return http.Response{}, fmt.Errorf("failed to create request: %w", err)
+		return 0, fmt.Errorf("failed to create request: %w", err)
 	}
 
 	request.AddHeaders(
@@ -327,32 +295,18 @@ func (p *Processor[T]) send(
 		p.endpoint.Headers,
 	)
 
+	otel.GetTextMapPropagator().Inject(ctx, propagation.HeaderCarrier(req.Header))
+
 	resp, err := p.client.Do(req)
 	if err != nil {
-		logger.Error(
-			ctx,
-			p.logger,
-			err.Error(),
-			p.signalTypeLogAttr(),
-			log.KeyValueFromAttribute(signalTenantAttr),
-		)
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "failed to send")
-		return http.Response{}, fmt.Errorf("failed to send request: %w", err)
+		return 0, fmt.Errorf("failed to send request: %w", err)
 	}
 
 	defer func() {
-		closeErr := resp.Body.Close()
-		if closeErr != nil {
-			logger.Error(
-				ctx,
-				p.logger,
-				fmt.Sprintf("failed to close response body: %v", closeErr),
-				p.signalTypeLogAttr(),
-				log.KeyValueFromAttribute(signalTenantAttr),
-			)
+		if closeErr := resp.Body.Close(); closeErr != nil {
 			span.RecordError(closeErr)
-			span.SetStatus(codes.Error, "failed to close response body")
 		}
 	}()
 
@@ -360,9 +314,13 @@ func (p *Processor[T]) send(
 		"signal.response.status.code",
 		strconv.Itoa(resp.StatusCode),
 	)
-
 	span.SetAttributes(signalResponseStatusCodeAttr)
-	span.SetStatus(codes.Ok, "sent successfully")
+
+	if resp.StatusCode >= http.StatusBadRequest {
+		span.SetStatus(codes.Error, fmt.Sprintf("non-success status: %d", resp.StatusCode))
+	} else {
+		span.SetStatus(codes.Ok, "sent successfully")
+	}
 
 	p.proxyLatencyMetricRecord(
 		ctx,
@@ -371,7 +329,7 @@ func (p *Processor[T]) send(
 		[]attribute.KeyValue{signalResponseStatusCodeAttr},
 	)
 
-	return *resp, nil
+	return resp.StatusCode, nil
 }
 
 // extractTenantFromResource extracts the tenant information from the resource attributes

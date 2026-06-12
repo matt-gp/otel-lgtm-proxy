@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"crypto/tls"
 	"net/http"
 	"net/http/httptest"
@@ -127,7 +128,7 @@ func TestRegister(t *testing.T) {
 			w.WriteHeader(http.StatusOK)
 		}
 
-		handlers.Register("GET /test", testHandler)
+		handlers.Register(context.Background(), "GET /test", testHandler)
 
 		// Test the registered handler
 		req := httptest.NewRequest(http.MethodGet, "/test", nil)
@@ -142,11 +143,11 @@ func TestRegister(t *testing.T) {
 
 func TestNewServer(t *testing.T) {
 	tests := []struct {
-		name              string
-		address           string
-		tlsConfig         *tls.Config
-		expectTLSConfig   bool
-		expectMaxHeader   int
+		name            string
+		address         string
+		tlsConfig       *tls.Config
+		expectTLSConfig bool
+		expectMaxHeader int
 	}{
 		{
 			name:            "creates server without TLS",

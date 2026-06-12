@@ -1,0 +1,6 @@
+FROM golang:alpine AS builder
+RUN go install github.com/open-telemetry/opentelemetry-collector-contrib/cmd/telemetrygen@latest
+
+FROM alpine:3.18
+COPY --from=builder /go/bin/telemetrygen /usr/local/bin/telemetrygen
+ENTRYPOINT ["telemetrygen"]

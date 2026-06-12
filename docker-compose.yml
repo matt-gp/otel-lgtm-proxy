@@ -54,7 +54,9 @@ services:
     ports:
       - "3000:3000"
     environment:
-      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
+      - GF_AUTH_DISABLE_LOGIN_FORM=true
     volumes:
       - ./test/grafana-datasources.yaml:/etc/grafana/provisioning/datasources/datasources.yaml
       - /var/lib/grafana
@@ -91,14 +93,8 @@ services:
       - OTEL_LOGS_EXPORTER=otlp
       # Note: No tenant.id set here to test default tenant logic
     depends_on:
-      loki:
-        condition: service_healthy
-      mimir:
-        condition: service_healthy
-      tempo:
-        condition: service_healthy
       otel-collector:
-        condition: service_started
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "/usr/bin/wget", "--spider", "http://localhost:8443/health"]
       interval: 10s
@@ -107,7 +103,9 @@ services:
 
   # OpenTelemetry Collector - receives OTLP and forwards to our proxy
   otel-collector:
-    image: otel/opentelemetry-collector-contrib:0.88.0
+    build:
+      context: ./test
+      dockerfile: Dockerfile.collector
     ports:
       - "4317"  # OTLP gRPC receiver
       - "4318"  # OTLP HTTP receiver
@@ -115,21 +113,281 @@ services:
     volumes:
       - ./test/otel-collector-config.yaml:/etc/otelcol-contrib/otel-collector-config.yaml
     command: ["--config=/etc/otelcol-contrib/otel-collector-config.yaml"]
+    depends_on:
+      loki:
+        condition: service_healthy
+      mimir:
+        condition: service_healthy
+      tempo:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "/usr/bin/wget", "--spider", "http://localhost:13133/"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
 
-  # Test Client using bash scripts - sends all telemetry types
-  test-client:
+  # telemetrygen services — one per tenant per service per signal type.
+  # Multiple service names per tenant mean each batch window bundles multiple
+  # ResourceSpans for the same tenant, giving signal.tenant.records > 1 and
+  # demonstrating realistic multi-service fan-out.
+
+  # ── tenant-a / web-app ──────────────────────────────────────────────────────
+  gen-tenant-a-web-app-traces:
     build:
       context: ./test
-      dockerfile: Dockerfile
-    environment:
-      - OTEL_COLLECTOR_ENDPOINT=http://otel-collector:4318
-      - TENANTS=tenant-a,tenant-b
-      - SERVICES=web-app,api-service,database,cache,auth-service
-      - INTERVAL=1
-    command: ["./send-telemetry.sh", "all"]
-    restart: "no"  # Prevent automatic restart
+      dockerfile: Dockerfile.telemetrygen
+    command:
+      - traces
+      - --otlp-endpoint=otel-collector:4317
+      - --otlp-insecure
+      - '--otlp-attributes=tenant.id="tenant-a"'
+      - --service=web-app
+      - --duration=Inf
+      - --rate=6
+    restart: unless-stopped
     depends_on:
       otel-collector:
-        condition: service_started
-      otel-lgtm-proxy:
+        condition: service_healthy
+
+  gen-tenant-a-web-app-logs:
+    build:
+      context: ./test
+      dockerfile: Dockerfile.telemetrygen
+    command:
+      - logs
+      - --otlp-endpoint=otel-collector:4317
+      - --otlp-insecure
+      - '--otlp-attributes=tenant.id="tenant-a"'
+      - --service=web-app
+      - --duration=Inf
+      - --rate=12
+    restart: unless-stopped
+    depends_on:
+      otel-collector:
+        condition: service_healthy
+
+  gen-tenant-a-web-app-metrics:
+    build:
+      context: ./test
+      dockerfile: Dockerfile.telemetrygen
+    command:
+      - metrics
+      - --otlp-endpoint=otel-collector:4317
+      - --otlp-insecure
+      - '--otlp-attributes=tenant.id="tenant-a"'
+      - --service=web-app
+      - --duration=Inf
+      - --rate=4
+    restart: unless-stopped
+    depends_on:
+      otel-collector:
+        condition: service_healthy
+
+  # ── tenant-a / api-service ───────────────────────────────────────────────────
+  gen-tenant-a-api-service-traces:
+    build:
+      context: ./test
+      dockerfile: Dockerfile.telemetrygen
+    command:
+      - traces
+      - --otlp-endpoint=otel-collector:4317
+      - --otlp-insecure
+      - '--otlp-attributes=tenant.id="tenant-a"'
+      - --service=api-service
+      - --duration=Inf
+      - --rate=4
+    restart: unless-stopped
+    depends_on:
+      otel-collector:
+        condition: service_healthy
+
+  gen-tenant-a-api-service-logs:
+    build:
+      context: ./test
+      dockerfile: Dockerfile.telemetrygen
+    command:
+      - logs
+      - --otlp-endpoint=otel-collector:4317
+      - --otlp-insecure
+      - '--otlp-attributes=tenant.id="tenant-a"'
+      - --service=api-service
+      - --duration=Inf
+      - --rate=7
+    restart: unless-stopped
+    depends_on:
+      otel-collector:
+        condition: service_healthy
+
+  gen-tenant-a-api-service-metrics:
+    build:
+      context: ./test
+      dockerfile: Dockerfile.telemetrygen
+    command:
+      - metrics
+      - --otlp-endpoint=otel-collector:4317
+      - --otlp-insecure
+      - '--otlp-attributes=tenant.id="tenant-a"'
+      - --service=api-service
+      - --duration=Inf
+      - --rate=3
+    restart: unless-stopped
+    depends_on:
+      otel-collector:
+        condition: service_healthy
+
+  # ── tenant-a / auth-service ──────────────────────────────────────────────────
+  gen-tenant-a-auth-service-traces:
+    build:
+      context: ./test
+      dockerfile: Dockerfile.telemetrygen
+    command:
+      - traces
+      - --otlp-endpoint=otel-collector:4317
+      - --otlp-insecure
+      - '--otlp-attributes=tenant.id="tenant-a"'
+      - --service=auth-service
+      - --duration=Inf
+      - --rate=2
+    restart: unless-stopped
+    depends_on:
+      otel-collector:
+        condition: service_healthy
+
+  gen-tenant-a-auth-service-logs:
+    build:
+      context: ./test
+      dockerfile: Dockerfile.telemetrygen
+    command:
+      - logs
+      - --otlp-endpoint=otel-collector:4317
+      - --otlp-insecure
+      - '--otlp-attributes=tenant.id="tenant-a"'
+      - --service=auth-service
+      - --duration=Inf
+      - --rate=5
+    restart: unless-stopped
+    depends_on:
+      otel-collector:
+        condition: service_healthy
+
+  gen-tenant-a-auth-service-metrics:
+    build:
+      context: ./test
+      dockerfile: Dockerfile.telemetrygen
+    command:
+      - metrics
+      - --otlp-endpoint=otel-collector:4317
+      - --otlp-insecure
+      - '--otlp-attributes=tenant.id="tenant-a"'
+      - --service=auth-service
+      - --duration=Inf
+      - --rate=2
+    restart: unless-stopped
+    depends_on:
+      otel-collector:
+        condition: service_healthy
+
+  # ── tenant-b / frontend ──────────────────────────────────────────────────────
+  gen-tenant-b-frontend-traces:
+    build:
+      context: ./test
+      dockerfile: Dockerfile.telemetrygen
+    command:
+      - traces
+      - --otlp-endpoint=otel-collector:4317
+      - --otlp-insecure
+      - '--otlp-attributes=tenant.id="tenant-b"'
+      - --service=frontend
+      - --duration=Inf
+      - --rate=5
+    restart: unless-stopped
+    depends_on:
+      otel-collector:
+        condition: service_healthy
+
+  gen-tenant-b-frontend-logs:
+    build:
+      context: ./test
+      dockerfile: Dockerfile.telemetrygen
+    command:
+      - logs
+      - --otlp-endpoint=otel-collector:4317
+      - --otlp-insecure
+      - '--otlp-attributes=tenant.id="tenant-b"'
+      - --service=frontend
+      - --duration=Inf
+      - --rate=8
+    restart: unless-stopped
+    depends_on:
+      otel-collector:
+        condition: service_healthy
+
+  gen-tenant-b-frontend-metrics:
+    build:
+      context: ./test
+      dockerfile: Dockerfile.telemetrygen
+    command:
+      - metrics
+      - --otlp-endpoint=otel-collector:4317
+      - --otlp-insecure
+      - '--otlp-attributes=tenant.id="tenant-b"'
+      - --service=frontend
+      - --duration=Inf
+      - --rate=4
+    restart: unless-stopped
+    depends_on:
+      otel-collector:
+        condition: service_healthy
+
+  # ── tenant-b / backend-api ───────────────────────────────────────────────────
+  gen-tenant-b-backend-api-traces:
+    build:
+      context: ./test
+      dockerfile: Dockerfile.telemetrygen
+    command:
+      - traces
+      - --otlp-endpoint=otel-collector:4317
+      - --otlp-insecure
+      - '--otlp-attributes=tenant.id="tenant-b"'
+      - --service=backend-api
+      - --duration=Inf
+      - --rate=3
+    restart: unless-stopped
+    depends_on:
+      otel-collector:
+        condition: service_healthy
+
+  gen-tenant-b-backend-api-logs:
+    build:
+      context: ./test
+      dockerfile: Dockerfile.telemetrygen
+    command:
+      - logs
+      - --otlp-endpoint=otel-collector:4317
+      - --otlp-insecure
+      - '--otlp-attributes=tenant.id="tenant-b"'
+      - --service=backend-api
+      - --duration=Inf
+      - --rate=6
+    restart: unless-stopped
+    depends_on:
+      otel-collector:
+        condition: service_healthy
+
+  gen-tenant-b-backend-api-metrics:
+    build:
+      context: ./test
+      dockerfile: Dockerfile.telemetrygen
+    command:
+      - metrics
+      - --otlp-endpoint=otel-collector:4317
+      - --otlp-insecure
+      - '--otlp-attributes=tenant.id="tenant-b"'
+      - --service=backend-api
+      - --duration=Inf
+      - --rate=2
+    restart: unless-stopped
+    depends_on:
+      otel-collector:
         condition: service_healthy

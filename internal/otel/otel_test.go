@@ -292,27 +292,24 @@ func TestGetLogLevelFromEnv(t *testing.T) {
 			expectedLevel: minsev.SeverityInfo,
 		},
 		{
-			name: "OTEL_LOG_LEVEL uppercase precedence",
-			setupEnvVars: map[string]string{
-				"OTEL_LOG_LEVEL": "DEBUG",
-				"LOG_LEVEL":      "info",
-			},
+			name:          "LOG_LEVEL debug",
+			setupEnvVars:  map[string]string{"LOG_LEVEL": "debug"},
 			expectedLevel: minsev.SeverityDebug,
 		},
 		{
-			name: "OTEL_LOG_LEVEL takes precedence",
-			setupEnvVars: map[string]string{
-				"OTEL_LOG_LEVEL": "debug",
-				"LOG_LEVEL":      "info",
-			},
-			expectedLevel: minsev.SeverityDebug,
-		},
-		{
-			name: "LOG_LEVEL used if OTEL_LOG_LEVEL not set",
-			setupEnvVars: map[string]string{
-				"LOG_LEVEL": "warn",
-			},
+			name:          "LOG_LEVEL warn",
+			setupEnvVars:  map[string]string{"LOG_LEVEL": "warn"},
 			expectedLevel: minsev.SeverityWarn,
+		},
+		{
+			name:          "LOG_LEVEL error",
+			setupEnvVars:  map[string]string{"LOG_LEVEL": "error"},
+			expectedLevel: minsev.SeverityError,
+		},
+		{
+			name:          "LOG_LEVEL uppercase",
+			setupEnvVars:  map[string]string{"LOG_LEVEL": "DEBUG"},
+			expectedLevel: minsev.SeverityDebug,
 		},
 	}
 
@@ -352,8 +349,7 @@ func clearOtelEnvVars() {
 		"OTEL_BSP_SCHEDULE_DELAY",        // Batch span processor schedule delay
 		"OTEL_METRIC_EXPORT_INTERVAL",    // Metrics export interval
 		"OTEL_RESOURCE_ATTRIBUTES",       // Resource attributes (key=value,key2=value2)
-		"OTEL_LOG_LEVEL",                 // Custom log level for filtering logs
-		"LOG_LEVEL",                      // Custom log level for filtering logs (alternative)
+		"LOG_LEVEL", // Log level for filtering exported log records
 	}
 
 	// Remove each environment variable

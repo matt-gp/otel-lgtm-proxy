@@ -890,7 +890,7 @@ func TestSend(t *testing.T) {
 			)
 			require.NoError(t, err)
 
-			resp, err := proc.send(context.Background(), tt.tenant, tt.resources)
+			statusCode, err := proc.send(context.Background(), tt.tenant, tt.resources)
 
 			if tt.wantErr {
 				assert.Error(t, err)
@@ -899,7 +899,7 @@ func TestSend(t *testing.T) {
 				}
 			} else {
 				assert.NoError(t, err)
-				assert.Equal(t, tt.mockResponse.StatusCode, resp.StatusCode)
+				assert.Equal(t, tt.mockResponse.StatusCode, statusCode)
 			}
 		})
 	}
