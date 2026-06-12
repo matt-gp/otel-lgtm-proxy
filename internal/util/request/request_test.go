@@ -2,6 +2,7 @@
 package request
 
 import (
+	"context"
 	"net/http/httptest"
 	"testing"
 
@@ -99,7 +100,7 @@ func TestAddHeaders(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			req := httptest.NewRequest("POST", "/test", nil)
-			AddHeaders(tt.tenant, req, tt.config, tt.headers)
+			AddHeaders(context.Background(), tt.tenant, req, tt.config, tt.headers)
 
 			for key, expectedValue := range tt.want {
 				actualValue := req.Header.Get(key)

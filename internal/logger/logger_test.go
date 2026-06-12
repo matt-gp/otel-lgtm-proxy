@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/exporters/stdout/stdoutlog"
 	"go.opentelemetry.io/otel/log"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
@@ -38,7 +39,7 @@ func createTestLogger() (log.Logger, *bytes.Buffer, error) {
 func TestLogLevels(t *testing.T) {
 	tests := []struct {
 		name     string
-		logFunc  func(context.Context, log.Logger, string, ...log.KeyValue)
+		logFunc  func(context.Context, log.Logger, string, ...attribute.KeyValue)
 		message  string
 		setLevel string
 	}{
@@ -104,36 +105,36 @@ func TestLogLevels(t *testing.T) {
 func TestLogWithAttributes(t *testing.T) {
 	tests := []struct {
 		name       string
-		logFunc    func(context.Context, log.Logger, string, ...log.KeyValue)
+		logFunc    func(context.Context, log.Logger, string, ...attribute.KeyValue)
 		message    string
-		attributes []log.KeyValue
+		attributes []attribute.KeyValue
 	}{
 		{
 			name:    "info with attributes",
 			logFunc: Info,
 			message: "info message with attributes",
-			attributes: []log.KeyValue{
-				String("key1", "value1"),
-				Int("key2", 42),
-				Bool("key3", true),
+			attributes: []attribute.KeyValue{
+				attribute.String("key1", "value1"),
+				attribute.Int("key2", 42),
+				attribute.Bool("key3", true),
 			},
 		},
 		{
 			name:    "error with attributes",
 			logFunc: Error,
 			message: "error message with attributes",
-			attributes: []log.KeyValue{
-				String("component", "test"),
-				Err(errors.New("test error")),
+			attributes: []attribute.KeyValue{
+				attribute.String("component", "test"),
+				attribute.String("error", errors.New("test error").Error()),
 			},
 		},
 		{
 			name:    "warn with attributes",
 			logFunc: Warn,
 			message: "warning with attributes",
-			attributes: []log.KeyValue{
-				String("service", "test-service"),
-				Int64("timestamp", 1234567890),
+			attributes: []attribute.KeyValue{
+				attribute.String("service", "test-service"),
+				attribute.Int64("timestamp", 1234567890),
 			},
 		},
 	}
@@ -155,39 +156,39 @@ func TestLogWithAttributes(t *testing.T) {
 func TestHelperFunctions(t *testing.T) {
 	t.Run("String", func(t *testing.T) {
 		kv := String("key", "value")
-		assert.Equal(t, "key", kv.Key)
-		assert.Equal(t, log.StringValue("value"), kv.Value)
+		assert.Equal(t, attribute.Key("key"), kv.Key)
+		assert.Equal(t, attribute.StringValue("value"), kv.Value)
 	})
 
 	t.Run("Int", func(t *testing.T) {
 		kv := Int("key", 42)
-		assert.Equal(t, "key", kv.Key)
-		assert.Equal(t, log.Int64Value(42), kv.Value)
+		assert.Equal(t, attribute.Key("key"), kv.Key)
+		assert.Equal(t, attribute.Int64Value(42), kv.Value)
 	})
 
 	t.Run("Int64", func(t *testing.T) {
 		kv := Int64("key", 9223372036854775807)
-		assert.Equal(t, "key", kv.Key)
-		assert.Equal(t, log.Int64Value(9223372036854775807), kv.Value)
+		assert.Equal(t, attribute.Key("key"), kv.Key)
+		assert.Equal(t, attribute.Int64Value(9223372036854775807), kv.Value)
 	})
 
 	t.Run("Float64", func(t *testing.T) {
 		kv := Float64("key", 3.14)
-		assert.Equal(t, "key", kv.Key)
-		assert.Equal(t, log.Float64Value(3.14), kv.Value)
+		assert.Equal(t, attribute.Key("key"), kv.Key)
+		assert.Equal(t, attribute.Float64Value(3.14), kv.Value)
 	})
 
 	t.Run("Bool", func(t *testing.T) {
 		kv := Bool("key", true)
-		assert.Equal(t, "key", kv.Key)
-		assert.Equal(t, log.BoolValue(true), kv.Value)
+		assert.Equal(t, attribute.Key("key"), kv.Key)
+		assert.Equal(t, attribute.BoolValue(true), kv.Value)
 	})
 
 	t.Run("Err", func(t *testing.T) {
 		testErr := errors.New("test error")
 		kv := Err(testErr)
-		assert.Equal(t, "error", kv.Key)
-		assert.Equal(t, log.StringValue("test error"), kv.Value)
+		assert.Equal(t, attribute.Key("error"), kv.Key)
+		assert.Equal(t, attribute.StringValue("test error"), kv.Value)
 	})
 }
 
@@ -207,7 +208,7 @@ func TestLogOutput(t *testing.T) {
 		}
 	}()
 
-	Info(ctx, logger, "test message", String("key", "value"))
+	Info(ctx, logger, "test message", attribute.String("key", "value"))
 
 	// For integration testing, you could check the buffer content
 	// but since we're dealing with OpenTelemetry's async processing,

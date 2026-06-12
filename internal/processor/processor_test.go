@@ -9,8 +9,10 @@ import (
 	"testing"
 
 	"github.com/matt-gp/otel-lgtm-proxy/internal/config"
+	"github.com/matt-gp/otel-lgtm-proxy/internal/otel"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/log/noop"
 	noopmetric "go.opentelemetry.io/otel/metric/noop"
 	nooptrace "go.opentelemetry.io/otel/trace/noop"
@@ -22,13 +24,13 @@ import (
 
 func TestNew(t *testing.T) {
 	tests := []struct {
-		name        string
-		config      *config.Config
-		endpoint    *config.Endpoint
-		signalType  string
-		client      Client
-		wantErr     bool
-		errContains string
+		name           string
+		config         *config.Config
+		endpoint       *config.Endpoint
+		signalTypeAttr attribute.KeyValue
+		client         Client
+		wantErr        bool
+		errContains    string
 	}{
 		{
 			name: "successful creation without TLS",
@@ -41,9 +43,12 @@ func TestNew(t *testing.T) {
 			endpoint: &config.Endpoint{
 				Address: "http://localhost:3100",
 			},
-			signalType: "logs",
-			client:     &http.Client{},
-			wantErr:    false,
+			signalTypeAttr: attribute.KeyValue{
+				Key:   attribute.Key(string(otel.SignalTypeAttrKey)),
+				Value: attribute.StringValue("logs"),
+			},
+			client:  &http.Client{},
+			wantErr: false,
 		},
 		{
 			name: "successful creation with TLS disabled",
@@ -59,9 +64,12 @@ func TestNew(t *testing.T) {
 					InsecureSkipVerify: false,
 				},
 			},
-			signalType: "logs",
-			client:     &http.Client{},
-			wantErr:    false,
+			signalTypeAttr: attribute.KeyValue{
+				Key:   attribute.Key(string(otel.SignalTypeAttrKey)),
+				Value: attribute.StringValue("logs"),
+			},
+			client:  &http.Client{},
+			wantErr: false,
 		},
 	}
 
@@ -81,7 +89,7 @@ func TestNew(t *testing.T) {
 			proc, err := New(
 				tt.config,
 				tt.endpoint,
-				tt.signalType,
+				tt.signalTypeAttr,
 				tt.client,
 				logger,
 				meter,
@@ -101,7 +109,7 @@ func TestNew(t *testing.T) {
 				assert.NotNil(t, proc)
 				assert.Equal(t, tt.config, proc.config)
 				assert.Equal(t, tt.endpoint, proc.endpoint)
-				assert.Equal(t, tt.signalType, proc.signalType)
+				assert.Equal(t, tt.signalTypeAttr, proc.signalTypeAttr)
 				assert.NotNil(t, proc.proxyRecordsMetric)
 				assert.NotNil(t, proc.proxyRequestsMetric)
 				assert.NotNil(t, proc.proxyLatencyMetric)
@@ -270,7 +278,7 @@ func TestExtractTenantFromResource(t *testing.T) {
 			proc, err := New(
 				tt.config,
 				&config.Endpoint{Address: "http://localhost:3100"},
-				"logs",
+				attribute.KeyValue{Key: attribute.Key(string(otel.SignalTypeAttrKey)), Value: attribute.StringValue("logs")},
 				&http.Client{},
 				logger,
 				meter,
@@ -492,7 +500,7 @@ func TestPartition(t *testing.T) {
 			proc, err := New(
 				tt.config,
 				&config.Endpoint{Address: "http://localhost:3100"},
-				"logs",
+				attribute.KeyValue{Key: attribute.Key(string(otel.SignalTypeAttrKey)), Value: attribute.StringValue("logs")},
 				&http.Client{},
 				logger,
 				meter,
@@ -741,7 +749,7 @@ func TestDispatch(t *testing.T) {
 					},
 				},
 				&config.Endpoint{Address: "http://localhost:3100"},
-				"logs",
+				attribute.KeyValue{Key: attribute.Key(string(otel.SignalTypeAttrKey)), Value: attribute.StringValue("logs")},
 				mockClient,
 				logger,
 				meter,
@@ -880,7 +888,7 @@ func TestSend(t *testing.T) {
 					},
 				},
 				&config.Endpoint{Address: "http://localhost:3100"},
-				"logs",
+				attribute.KeyValue{Key: attribute.Key(string(otel.SignalTypeAttrKey)), Value: attribute.StringValue("logs")},
 				mockClient,
 				logger,
 				meter,

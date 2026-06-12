@@ -8,9 +8,11 @@ import (
 
 	"github.com/matt-gp/otel-lgtm-proxy/internal/config"
 	"github.com/matt-gp/otel-lgtm-proxy/internal/logger"
+	"github.com/matt-gp/otel-lgtm-proxy/internal/otel"
 	"github.com/matt-gp/otel-lgtm-proxy/internal/processor"
 	"github.com/matt-gp/otel-lgtm-proxy/internal/util/proto"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/log"
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
@@ -47,7 +49,7 @@ func New(
 	logsProcessor, err := processor.New(
 		config,
 		&config.Logs,
-		"logs",
+		attribute.String(otel.SignalTypeAttrKey, "logs"),
 		logsClient,
 		logger,
 		meter,
@@ -70,7 +72,7 @@ func New(
 	metricsProcessor, err := processor.New(
 		config,
 		&config.Metrics,
-		"metrics",
+		attribute.String(otel.SignalTypeAttrKey, "metrics"),
 		metricsClient,
 		logger,
 		meter,
@@ -93,7 +95,7 @@ func New(
 	tracesProcessor, err := processor.New(
 		config,
 		&config.Traces,
-		"traces",
+		attribute.String(otel.SignalTypeAttrKey, "traces"),
 		tracesClient,
 		logger,
 		meter,

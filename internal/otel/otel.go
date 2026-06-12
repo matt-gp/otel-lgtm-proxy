@@ -30,9 +30,44 @@ import (
 )
 
 const (
-	exporterConsole      = "console"
-	exporterNone         = "none"
-	exporterOTLP         = "otlp"
+	// SignalTypeAttrKey is the attribute key for the type of OTLP signal (logs, metrics, traces).
+	SignalTypeAttrKey = "signal.type"
+
+	// SignalTenantAttrKey is the attribute key for the tenant associated with the OTLP signal.
+	SignalTenantAttrKey = "signal.tenant"
+
+	// SignalTenantRecordsAttrKey is the attribute key for the number of records associated with the tenant.
+	SignalTenantRecordsAttrKey = "signal.tenant.records"
+
+	// SignalResponseStatusCodeAttrKey is the attribute key for the HTTP response status code of the OTLP signal.
+	SignalResponseStatusCodeAttrKey = "signal.response.status.code"
+
+	// HTTPAddressAttrKey is the attribute key for the HTTP server address.
+	HTTPAddressAttrKey = "http.address"
+
+	// HTTPTLSEnabledAttrKey is the attribute key for whether TLS is enabled on the HTTP server.
+	HTTPTLSEnabledAttrKey = "http.tls.enabled"
+
+	// HTTPClientURLAttrKey is the attribute key for the HTTP client URL.
+	HTTPClientURLAttrKey = "http.client.url"
+
+	// HTTPClientTimeoutAttrKey is the attribute key for the HTTP client timeout.
+	HTTPClientTimeoutAttrKey = "http.client.timeout"
+
+	// HTTPClientTLSEnabledAttrKey is the attribute key for whether TLS is enabled on the HTTP client.
+	HTTPClientTLSEnabledAttrKey = "http.client.tls.enabled"
+
+	// ErrorAttrKey is the attribute key for errors.
+	ErrorAttrKey = "error"
+)
+
+const (
+	exporterConsole = "console"
+	exporterNone    = "none"
+	exporterOTLP    = "otlp"
+)
+
+const (
 	protocolHTTPProtobuf = "http/protobuf"
 	protocolHTTP         = "http"
 	protocolGRPC         = "grpc"
@@ -47,7 +82,7 @@ type Provider struct {
 
 // NewProvider creates a new OpenTelemetry provider using environment variables
 // This function relies heavily on OpenTelemetry's built-in environment variable support
-func NewProvider(config config.Config) (*Provider, error) {
+func NewProvider(ctx context.Context, config config.Config) (*Provider, error) {
 	// Check if OpenTelemetry is disabled
 	if os.Getenv("OTEL_SDK_DISABLED") == "true" {
 		return &Provider{}, nil
@@ -55,7 +90,7 @@ func NewProvider(config config.Config) (*Provider, error) {
 
 	// Create resource with service information - the SDK will automatically
 	// merge this with OTEL_RESOURCE_ATTRIBUTES from environment
-	res, err := resource.New(context.Background(),
+	res, err := resource.New(ctx,
 		resource.WithAttributes(
 			semconv.ServiceNameKey.String(config.Service.Name),
 			semconv.ServiceVersionKey.String(config.Service.Version),
@@ -73,15 +108,15 @@ func NewProvider(config config.Config) (*Provider, error) {
 	provider := &Provider{}
 
 	// Initialize providers - each init function handles environment variables internally
-	if err := provider.initTracing(res); err != nil {
+	if err := provider.initTracing(ctx, res); err != nil {
 		return nil, fmt.Errorf("failed to initialize tracing: %w", err)
 	}
 
-	if err := provider.initMetrics(res); err != nil {
+	if err := provider.initMetrics(ctx, res); err != nil {
 		return nil, fmt.Errorf("failed to initialize metrics: %w", err)
 	}
 
-	if err := provider.initLogging(res); err != nil {
+	if err := provider.initLogging(ctx, res); err != nil {
 		return nil, fmt.Errorf("failed to initialize logging: %w", err)
 	}
 
@@ -153,7 +188,7 @@ func (p *Provider) Shutdown(ctx context.Context) error {
 	return nil
 }
 
-func (p *Provider) initLogging(res *resource.Resource) error {
+func (p *Provider) initLogging(ctx context.Context, res *resource.Resource) error {
 	exporter := os.Getenv("OTEL_LOGS_EXPORTER")
 	if exporter == "" {
 		exporter = exporterConsole // Default to console
@@ -172,18 +207,18 @@ func (p *Provider) initLogging(res *resource.Resource) error {
 	var err error
 
 	switch exporter {
-	case "otlp":
+	case string(exporterOTLP):
 		// Check protocol preference - HTTP or gRPC
 		protocol := os.Getenv("OTEL_EXPORTER_OTLP_PROTOCOL")
 		if protocol == "" {
-			protocol = "http/protobuf" // Default to HTTP with protobuf to avoid trace ID encoding issues
+			protocol = protocolHTTPProtobuf // Default to HTTP with protobuf to avoid trace ID encoding issues
 		}
 
 		switch protocol {
 		case protocolHTTPProtobuf, protocolHTTP:
-			logExporter, err = otlploghttp.New(context.Background())
+			logExporter, err = otlploghttp.New(ctx)
 		case protocolGRPC:
-			logExporter, err = otlploggrpc.New(context.Background())
+			logExporter, err = otlploggrpc.New(ctx)
 		default:
 			return fmt.Errorf("unsupported OTLP protocol: %q", protocol)
 		}
@@ -209,7 +244,7 @@ func (p *Provider) initLogging(res *resource.Resource) error {
 	return nil
 }
 
-func (p *Provider) initMetrics(res *resource.Resource) error {
+func (p *Provider) initMetrics(ctx context.Context, res *resource.Resource) error {
 	exporter := os.Getenv("OTEL_METRICS_EXPORTER")
 	if exporter == "" {
 		exporter = exporterConsole // Default to console
@@ -234,11 +269,11 @@ func (p *Provider) initMetrics(res *resource.Resource) error {
 		var metricExporter metric.Exporter
 		switch protocol {
 		case protocolHTTPProtobuf, protocolHTTP:
-			metricExporter, err = otlpmetrichttp.New(context.Background(),
+			metricExporter, err = otlpmetrichttp.New(ctx,
 				otlpmetrichttp.WithTemporalitySelector(metric.DefaultTemporalitySelector),
 			)
 		case protocolGRPC:
-			metricExporter, err = otlpmetricgrpc.New(context.Background(),
+			metricExporter, err = otlpmetricgrpc.New(ctx,
 				otlpmetricgrpc.WithTemporalitySelector(metric.DefaultTemporalitySelector),
 			)
 		default:
@@ -273,7 +308,7 @@ func (p *Provider) initMetrics(res *resource.Resource) error {
 	return nil
 }
 
-func (p *Provider) initTracing(res *resource.Resource) error {
+func (p *Provider) initTracing(ctx context.Context, res *resource.Resource) error {
 	exporter := os.Getenv("OTEL_TRACES_EXPORTER")
 	if exporter == "" {
 		exporter = exporterConsole // Default to console
@@ -297,9 +332,9 @@ func (p *Provider) initTracing(res *resource.Resource) error {
 
 		switch protocol {
 		case protocolHTTPProtobuf, protocolHTTP:
-			traceExporter, err = otlptracehttp.New(context.Background())
+			traceExporter, err = otlptracehttp.New(ctx)
 		case protocolGRPC:
-			traceExporter, err = otlptracegrpc.New(context.Background())
+			traceExporter, err = otlptracegrpc.New(ctx)
 		default:
 			return fmt.Errorf("unsupported OTLP protocol: %q", protocol)
 		}

@@ -377,6 +377,7 @@ resource = Resource.create({
 ## Endpoints
 
 | Method | Path | Description |
+|--------|------|-------------|
 | `POST` | `/v1/logs` | Accepts OTLP logs in protobuf format |
 | `POST` | `/v1/metrics` | Accepts OTLP metrics in protobuf format |
 | `POST` | `/v1/traces` | Accepts OTLP traces in protobuf format |
