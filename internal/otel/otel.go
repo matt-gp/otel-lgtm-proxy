@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/matt-gp/otel-lgtm-proxy/internal/config"
@@ -95,26 +96,32 @@ func NewProvider(config config.Config) (*Provider, error) {
 		global.SetLoggerProvider(provider.LoggerProvider)
 	}
 
-	// Set propagator - automatically configured from OTEL_PROPAGATORS
-	propagatorNames := os.Getenv("OTEL_PROPAGATORS")
-	if propagatorNames == "" {
-		propagatorNames = "tracecontext,baggage" // Default propagators
+	if err := configurePropagators(); err != nil {
+		return nil, err
+	}
+
+	return provider, nil
+}
+
+func configurePropagators() error {
+	names := os.Getenv("OTEL_PROPAGATORS")
+	if names == "" {
+		names = "tracecontext,baggage"
 	}
 
 	var propagators []propagation.TextMapPropagator
-	for _, name := range strings.Split(propagatorNames, ",") {
+	for _, name := range strings.Split(names, ",") {
 		switch strings.TrimSpace(name) {
 		case "tracecontext":
 			propagators = append(propagators, propagation.TraceContext{})
 		case "baggage":
 			propagators = append(propagators, propagation.Baggage{})
+		default:
+			return fmt.Errorf("unsupported propagator %q (supported: tracecontext, baggage)", strings.TrimSpace(name))
 		}
 	}
-	if len(propagators) > 0 {
-		otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(propagators...))
-	}
-
-	return provider, nil
+	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(propagators...))
+	return nil
 }
 
 // Shutdown gracefully shuts down all OpenTelemetry providers.
@@ -316,6 +323,13 @@ func (p *Provider) initTracing(res *resource.Resource) error {
 		samplerType = "parentbased_always_on" // Default sampler
 	}
 
+	samplerArg := 1.0
+	if arg := os.Getenv("OTEL_TRACES_SAMPLER_ARG"); arg != "" {
+		if parsed, err := strconv.ParseFloat(arg, 64); err == nil {
+			samplerArg = parsed
+		}
+	}
+
 	var sampler trace.Sampler
 	switch samplerType {
 	case "always_on":
@@ -323,14 +337,13 @@ func (p *Provider) initTracing(res *resource.Resource) error {
 	case "always_off":
 		sampler = trace.NeverSample()
 	case "traceidratio":
-		// Use default ratio of 1.0 if not specified
-		sampler = trace.TraceIDRatioBased(1.0)
+		sampler = trace.TraceIDRatioBased(samplerArg)
 	case "parentbased_always_on":
 		sampler = trace.ParentBased(trace.AlwaysSample())
 	case "parentbased_always_off":
 		sampler = trace.ParentBased(trace.NeverSample())
 	case "parentbased_traceidratio":
-		sampler = trace.ParentBased(trace.TraceIDRatioBased(1.0))
+		sampler = trace.ParentBased(trace.TraceIDRatioBased(samplerArg))
 	default:
 		sampler = trace.ParentBased(trace.AlwaysSample())
 	}
@@ -344,16 +357,9 @@ func (p *Provider) initTracing(res *resource.Resource) error {
 	return nil
 }
 
+// getLogLevelFromEnv reads the LOG_LEVEL environment variable and returns the corresponding minsev.Severity level.
 func getLogLevelFromEnv() minsev.Severity {
-	otelLogLevel := os.Getenv("OTEL_LOG_LEVEL")
-	logLevel := os.Getenv("LOG_LEVEL")
-
-	// OTEL_LOG_LEVEL takes precedence over LOG_LEVEL if both are set
-	if otelLogLevel != "" {
-		logLevel = otelLogLevel
-	}
-
-	switch strings.ToLower(logLevel) {
+	switch strings.ToLower(os.Getenv("LOG_LEVEL")) {
 	case "trace":
 		return minsev.SeverityTrace
 	case "debug":

@@ -6,7 +6,6 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
-	"fmt"
 	"net/http"
 	"os"
 	"os/signal"
@@ -20,26 +19,15 @@ import (
 	"go.opentelemetry.io/otel/log"
 )
 
-type logKeyValue string
+type logKey string
 
 const (
-	// LogKeyValueServiceName is the log key for the service name.
-	LogKeyValueServiceName logKeyValue = "service_name"
-
-	// LogKeyValueServiceVersion is the log key for the service version.
-	LogKeyValueServiceVersion logKeyValue = "service_version"
-
-	// LogKeyValueEndpoint is the log key for the HTTP endpoint.
-	LogKeyValueEndpoint logKeyValue = "endpoint"
-
-	// LogKeyValueError is the log key for error messages.
-	LogKeyValueError logKeyValue = "error"
-
-	// LogKeyValueAddress is the log key for network addresses.
-	LogKeyValueAddress logKeyValue = "address"
-
-	// LogKeyValueTLSEnabled is the log key for TLS enabled status.
-	LogKeyValueTLSEnabled logKeyValue = "tls_enabled"
+	// LogKeyHTTPAddress is the log key for the HTTP server address.
+	LogKeyHTTPAddress logKey = "http.address"
+	// LogKeyHTTPTLSEnabled is the log key for whether TLS is enabled on the HTTP server.
+	LogKeyHTTPTLSEnabled logKey = "http.tls.enabled"
+	// LogKeyError is the log key for errors.
+	LogKeyError logKey = "error"
 )
 
 func main() {
@@ -68,69 +56,79 @@ func main() {
 		ctx,
 		loggingProvider,
 		"Starting application",
-		log.KeyValue{Key: string(LogKeyValueServiceName), Value: log.StringValue(cfg.Service.Name)},
-		log.KeyValue{Key: string(LogKeyValueServiceVersion), Value: log.StringValue(cfg.Service.Version)},
 	)
 
 	// Initialize signal handling
 	ctx, stop := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
+	// Create HTTP clients for logs
+	logsClient, err := newClient(ctx, loggingProvider, &cfg.Logs)
+	if err != nil {
+		logger.Error(
+			ctx,
+			loggingProvider,
+			"failed to create logs client",
+			log.KeyValue{Key: string(LogKeyError), Value: log.StringValue(err.Error())},
+		)
+		os.Exit(1)
+	}
+
+	// Create HTTP clients for metrics
+	metricsClient, err := newClient(ctx, loggingProvider, &cfg.Metrics)
+	if err != nil {
+		logger.Error(
+			ctx,
+			loggingProvider,
+			"failed to create metrics client",
+			log.KeyValue{Key: string(LogKeyError), Value: log.StringValue(err.Error())},
+		)
+		os.Exit(1)
+	}
+
+	// Create HTTP clients for traces
+	tracesClient, err := newClient(ctx, loggingProvider, &cfg.Traces)
+	if err != nil {
+		logger.Error(
+			ctx,
+			loggingProvider,
+			"failed to create traces client",
+			log.KeyValue{Key: string(LogKeyError), Value: log.StringValue(err.Error())},
+		)
+		os.Exit(1)
+	}
+
 	// Initialize handlers
 	h, err := handler.New(
 		cfg,
 		http.NewServeMux(),
-		&http.Client{Timeout: cfg.Logs.Timeout},
-		&http.Client{Timeout: cfg.Metrics.Timeout},
-		&http.Client{Timeout: cfg.Traces.Timeout},
+		logsClient,
+		metricsClient,
+		tracesClient,
 		loggingProvider,
 		meterProvider,
 		tracerProvider,
 	)
 	if err != nil {
-		logger.Error(ctx, loggingProvider, err.Error())
+		logger.Error(
+			ctx,
+			loggingProvider,
+			err.Error(),
+		)
 		os.Exit(1)
 	}
 
 	// Health check endpoint
-	healthEndpoint := "/health"
-	logger.Info(
-		ctx,
-		loggingProvider,
-		"registering health check endpoint",
-		log.KeyValue{Key: string(LogKeyValueEndpoint), Value: log.StringValue(healthEndpoint)},
-	)
-	h.Register("GET "+healthEndpoint, h.Health)
+	h.Register(ctx, "GET /health", h.Health)
 
 	// register the logs handler.
-	logsEndpoint := "/v1/logs"
-	logger.Info(
-		ctx,
-		loggingProvider,
-		"receiving logs",
-		log.KeyValue{Key: string(LogKeyValueEndpoint), Value: log.StringValue(logsEndpoint)},
-	)
-	h.Register("POST "+logsEndpoint, h.Logs)
+	h.Register(ctx, "POST /v1/logs", h.Logs)
 
 	// register the metrics handler.
-	metricsEndpoint := "/v1/metrics"
-	logger.Info(
-		ctx,
-		loggingProvider,
-		"receiving metrics",
-		log.KeyValue{Key: string(LogKeyValueEndpoint), Value: log.StringValue(metricsEndpoint)},
-	)
-	h.Register("POST "+metricsEndpoint, h.Metrics)
+	h.Register(ctx, "POST /v1/metrics", h.Metrics)
 
 	// register the traces handler.
-	tracesEndpoint := "/v1/traces"
-	logger.Info(
-		ctx,
-		loggingProvider,
-		"receiving traces",
-		log.KeyValue{Key: string(LogKeyValueEndpoint), Value: log.StringValue(tracesEndpoint)},
-	)
-	h.Register("POST "+tracesEndpoint, h.Traces)
+	h.Register(ctx, "POST /v1/traces", h.Traces)
 
 	// Initialize TLS configuration
 	tlsConfig := &tls.Config{
@@ -145,7 +143,7 @@ func main() {
 				ctx,
 				loggingProvider,
 				"unable to read certificate or key file",
-				log.KeyValue{Key: string(LogKeyValueError), Value: log.StringValue(err.Error())},
+				log.KeyValue{Key: string(LogKeyError), Value: log.StringValue(err.Error())},
 			)
 			os.Exit(1)
 		}
@@ -157,7 +155,7 @@ func main() {
 				ctx,
 				loggingProvider,
 				"unable to read CA file",
-				log.KeyValue{Key: string(LogKeyValueError), Value: log.StringValue(err.Error())},
+				log.KeyValue{Key: string(LogKeyError), Value: log.StringValue(err.Error())},
 			)
 			os.Exit(1)
 		}
@@ -178,8 +176,8 @@ func main() {
 			ctx,
 			loggingProvider,
 			"starting server",
-			log.KeyValue{Key: string(LogKeyValueAddress), Value: log.StringValue(cfg.HTTP.Address)},
-			log.KeyValue{Key: string(LogKeyValueTLSEnabled), Value: log.BoolValue(tlsEnabled)},
+			log.KeyValue{Key: "http.address", Value: log.StringValue(cfg.HTTP.Address)},
+			log.KeyValue{Key: "http.tls.enabled", Value: log.BoolValue(tlsEnabled)},
 		)
 
 		if tlsEnabled {
@@ -193,8 +191,8 @@ func main() {
 				ctx,
 				loggingProvider,
 				err.Error(),
-				log.KeyValue{Key: string(LogKeyValueAddress), Value: log.StringValue(cfg.HTTP.Address)},
-				log.KeyValue{Key: string(LogKeyValueTLSEnabled), Value: log.BoolValue(tlsEnabled)},
+				log.KeyValue{Key: string(LogKeyHTTPAddress), Value: log.StringValue(cfg.HTTP.Address)},
+				log.KeyValue{Key: string(LogKeyHTTPTLSEnabled), Value: log.BoolValue(tlsEnabled)},
 			)
 			os.Exit(1)
 		}
@@ -208,6 +206,48 @@ func main() {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.TimeoutShutdown)
 	defer cancel()
 	if err := server.Shutdown(shutdownCtx); err != nil {
-		logger.Error(ctx, loggingProvider, fmt.Sprintf("http close error: %v", err), log.KeyValue{Key: string(LogKeyValueAddress), Value: log.StringValue(cfg.HTTP.Address)})
+		logger.Error(ctx,
+			loggingProvider,
+			"http close error",
+			log.KeyValue{Key: string(LogKeyError), Value: log.StringValue(err.Error())},
+			log.KeyValue{Key: string(LogKeyHTTPAddress), Value: log.StringValue(cfg.HTTP.Address)},
+			log.KeyValue{Key: string(LogKeyHTTPTLSEnabled), Value: log.BoolValue(cert.TLSEnabled(&cfg.HTTP.TLS))},
+		)
+		os.Exit(1)
 	}
+}
+
+// newClient creates a new HTTP client with the specified timeout and TLS configuration.
+func newClient(ctx context.Context, loggingProvider log.Logger, endpoint *config.Endpoint) (*http.Client, error) {
+	clientAttributes := []log.KeyValue{
+		{Key: "http.client.url", Value: log.StringValue(endpoint.Address)},
+		{Key: "http.client.timeout", Value: log.Int64Value(int64(endpoint.Timeout.Seconds()))},
+		{Key: "http.client.tls.enabled", Value: log.BoolValue(cert.TLSEnabled(&endpoint.TLS))},
+	}
+
+	c := &http.Client{Timeout: endpoint.Timeout}
+	if cert.TLSEnabled(&endpoint.TLS) {
+		tlsConfig, err := cert.CreateTLSConfig(endpoint)
+		if err != nil {
+			logger.Error(
+				ctx,
+				loggingProvider,
+				"failed to create TLS config",
+				append(clientAttributes,
+					log.KeyValue{Key: string(LogKeyError), Value: log.StringValue(err.Error())},
+				)...,
+			)
+			return nil, err
+		}
+		c.Transport = &http.Transport{TLSClientConfig: tlsConfig}
+	}
+
+	logger.Info(
+		ctx,
+		loggingProvider,
+		"created HTTP client",
+		clientAttributes...,
+	)
+
+	return c, nil
 }

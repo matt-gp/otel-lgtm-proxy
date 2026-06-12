@@ -64,33 +64,25 @@ This project adheres to a code of conduct. By participating, you are expected to
 ├── internal/              # Private application code
 │   ├── config/           # Configuration management
 │   │   └── config.go
-│   ├── certutil/         # TLS certificate utilities  
-│   │   ├── cert_helpers.go
-│   │   └── cert_helpers_test.go
-│   ├── logger/           # Logging utilities
-│   │   ├── logger.go
-│   │   └── logger_test.go
-│   ├── otel/             # OpenTelemetry setup
-│   │   ├── otel.go
-│   │   └── otel_test.go
-│   ├── logs/             # Log telemetry processing
+│   ├── handler/          # HTTP request handlers (logs, metrics, traces)
+│   │   ├── handlers.go
 │   │   ├── logs.go
-│   │   ├── logs_test.go
-│   │   └── logs_mock.go
-│   ├── metrics/          # Metric telemetry processing
 │   │   ├── metrics.go
-│   │   ├── metrics_test.go
-│   │   └── metrics_mock.go
-│   └── traces/           # Trace telemetry processing
-│       ├── traces.go
-│       ├── traces_test.go
-│       └── traces_mock.go
-├── test/                 # Testing tools and configurations
-│   ├── docker-compose.yml # LGTM stack for development
-│   ├── *.yaml            # Service configurations
-│   └── send-*.sh         # Testing scripts
-├── docker-compose.yml    # LGTM development stack
-├── Dockerfile            # Container build
+│   │   └── traces.go
+│   ├── processor/        # Generic tenant partitioning and dispatch
+│   │   ├── processor.go
+│   │   └── processor_mock.go
+│   ├── logger/           # Logging utilities
+│   │   └── logger.go
+│   ├── otel/             # OpenTelemetry provider setup
+│   │   └── otel.go
+│   └── util/             # Shared utilities (cert, proto, request)
+├── test/                 # Local development environment
+│   ├── Dockerfile.telemetrygen  # telemetrygen image build
+│   ├── Dockerfile.collector     # otelcol-contrib image with wget
+│   └── *.yaml            # Service configurations
+├── docker-compose.yml    # Full development stack
+├── Dockerfile            # Proxy container build
 ├── go.mod               # Go module definition
 ├── go.sum               # Go module checksums
 └── README.md            # Project documentation
@@ -100,13 +92,12 @@ This project adheres to a code of conduct. By participating, you are expected to
 
 - **`cmd/`**: Contains application entry points. Keep these minimal.
 - **`internal/config/`**: Configuration parsing and validation.
-- **`internal/certutil/`**: TLS configuration and certificate management.
+- **`internal/handler/`**: HTTP handlers that parse OTLP protobuf and delegate to processors.
+- **`internal/processor/`**: Generic `Processor[T]` for tenant partitioning and concurrent dispatch.
 - **`internal/logger/`**: OpenTelemetry logging wrapper with severity filtering.
 - **`internal/otel/`**: OpenTelemetry provider initialization and configuration.
-- **`internal/logs/`**: Log telemetry processing with tenant partitioning and forwarding.
-- **`internal/metrics/`**: Metric telemetry processing with temporality handling.
-- **`internal/traces/`**: Trace telemetry processing with correlation support.
-- **`test/`**: Testing scripts and development environment configurations.
+- **`internal/util/`**: Shared TLS, protobuf, and HTTP request utilities.
+- **`test/`**: Dockerfiles and config files for the local development environment.
 
 ## Development Workflow
 
@@ -245,14 +236,11 @@ go test -run TestConfig_Parse ./internal/config
 When adding new interfaces, generate mocks:
 
 ```bash
-# Generate mocks for logs interfaces
-mockgen -source=internal/logs/logs.go -destination=internal/logs/logs_mock.go -package=logs
+# Generate mocks for the processor package
+go generate ./internal/processor
 
-# Generate mocks for metrics interfaces  
-mockgen -source=internal/metrics/metrics.go -destination=internal/metrics/metrics_mock.go -package=metrics
-
-# Generate mocks for traces interfaces
-mockgen -source=internal/traces/traces.go -destination=internal/traces/traces_mock.go -package=traces
+# Or manually:
+mockgen -package processor -source internal/processor/processor.go -destination internal/processor/processor_mock.go
 ```
 
 ### Test Coverage
@@ -387,11 +375,11 @@ This project **ONLY** supports HTTP protobuf payloads:
 
 When adding support for new OpenTelemetry signals:
 
-1. Create a new package in `internal/` (e.g., `internal/newsignal/`)
-2. Implement partitioning logic similar to existing signal packages
-3. Add HTTP handlers following the same pattern
-4. Update configuration in `internal/config/` if needed
-5. Add comprehensive tests with generated mocks
+1. Add an HTTP handler in `internal/handler/` that parses the protobuf payload
+2. Instantiate a `processor.New[T]()` with the signal-specific `getResource` and `marshalResources` callbacks
+3. Add the backend endpoint configuration to `internal/config/`
+4. Wire the handler into `cmd/main.go`
+5. Add tests following the existing table-driven pattern
 6. Update documentation
 
 ## Performance Considerations

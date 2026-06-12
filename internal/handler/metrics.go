@@ -16,7 +16,6 @@ import (
 func (h *Handlers) Metrics(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	span := trace.SpanFromContext(ctx)
-	defer span.End()
 	span.SetAttributes(attribute.String("signal.type", "metrics"))
 
 	// Unmarshal the incoming metric data

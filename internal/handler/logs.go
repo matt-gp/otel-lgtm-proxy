@@ -16,7 +16,6 @@ import (
 func (h *Handlers) Logs(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	span := trace.SpanFromContext(ctx)
-	defer span.End()
 	span.SetAttributes(attribute.String("signal.type", "logs"))
 
 	// Unmarshal the incoming log data

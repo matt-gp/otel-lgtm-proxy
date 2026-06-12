@@ -2,10 +2,12 @@
 package handler
 
 import (
+	"context"
 	"crypto/tls"
 	"net/http"
 
 	"github.com/matt-gp/otel-lgtm-proxy/internal/config"
+	"github.com/matt-gp/otel-lgtm-proxy/internal/logger"
 	"github.com/matt-gp/otel-lgtm-proxy/internal/processor"
 	"github.com/matt-gp/otel-lgtm-proxy/internal/util/proto"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
@@ -123,16 +125,24 @@ func New(
 }
 
 // Register registers the given handler function for the specified pattern on the provided router.
-func (h *Handlers) Register(pattern string, handlerFunc func(http.ResponseWriter, *http.Request)) {
+func (h *Handlers) Register(ctx context.Context, pattern string, handlerFunc func(http.ResponseWriter, *http.Request)) {
+	logger.Info(
+		ctx,
+		h.logger,
+		"registering handler "+pattern,
+	)
 	h.router.Handle(pattern, otelhttp.NewHandler(http.HandlerFunc(handlerFunc), pattern))
 }
 
 // NewServer creates a new HTTP server with the provided TLS configuration.
 func (h *Handlers) NewServer(tlsConfig *tls.Config) *http.Server {
 	return &http.Server{
-		MaxHeaderBytes: 1 << 20, // 1MB max header size
-		Addr:           h.config.HTTP.Address,
-		Handler:        h.router,
-		TLSConfig:      tlsConfig,
+		MaxHeaderBytes:    1 << 20, // 1MB max header size
+		Addr:              h.config.HTTP.Address,
+		Handler:           h.router,
+		TLSConfig:         tlsConfig,
+		ReadHeaderTimeout: h.config.HTTP.Timeout,
+		ReadTimeout:       h.config.HTTP.Timeout,
+		WriteTimeout:      h.config.HTTP.Timeout,
 	}
 }

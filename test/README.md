@@ -1,194 +1,74 @@
-# Testing Guide
+# Test Environment
 
-This directory contains testing tools for the otel-lgtm-proxy.
+This directory contains the configuration and Dockerfiles for the local development environment. Running `docker compose up -d` from the project root starts everything automatically.
 
-## Test Scripts
-
-The testing toolkit consists of simple bash scripts that send OTLP data via HTTP/JSON to the collector:
-
-- **`send-telemetry.sh`** - Master script that can run all or individual telemetry types
-- **`send-logs.sh`** - Sends logs with realistic log levels and content  
-- **`send-metrics.sh`** - Sends counters and gauges with random values
-- **`send-traces.sh`** - Sends HTTP operation traces with spans
-
-### Architecture
+## Architecture
 
 ```
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│  Bash Scripts   │───▶│  OTEL Collector │───▶│  OTEL Proxy     │───▶│   LGTM Stack    │
-│                 │    │                 │    │                 │    │                 │
-│ • Multi-tenant  │    │ • Batching      │    │ • Tenant        │    │ • Loki (Logs)   │
-│ • Random data   │    │ • Forwarding    │    │   Partitioning  │    │ • Mimir (Metrics)│
-│ • HTTP/JSON     │    │ • OTLP HTTP     │    │ • Header        │    │ • Tempo (Traces) │
-│ • Continuous    │    │                 │    │   Injection     │    │ • Grafana (UI)   │
-└─────────────────┘    └─────────────────┘    └─────────────────┘    └─────────────────┘
+┌──────────────────────┐    ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
+│  telemetrygen (×15)  │───▶│  OTEL Collector │───▶│  OTEL Proxy     │───▶│   LGTM Stack    │
+│                      │    │                 │    │                 │    │                 │
+│ 2 tenants            │    │ • Batching (1s) │    │ • Tenant        │    │ • Loki (Logs)   │
+│ 5 services           │    │ • Forwarding    │    │   Partitioning  │    │ • Mimir (Metrics)│
+│ 3 signal types each  │    │ • Health check  │    │ • Header        │    │ • Tempo (Traces) │
+│ Varied rates         │    │                 │    │   Injection     │    │ • Grafana (UI)   │
+└──────────────────────┘    └─────────────────┘    └─────────────────┘    └─────────────────┘
 ```
 
-The scripts:
-1. **Generate telemetry** in OTLP JSON format with realistic content
-2. **Send to collector** via HTTP POST to the OTLP endpoints
-3. **Use multiple tenants** with X-Scope-OrgID headers
-4. **Run continuously** until stopped with Ctrl+C
+The collector's 1 second batch window ensures data from multiple services and tenants is bundled into each request to the proxy, exercising the fan-out code path (`processor.send` spans per tenant are visible in Tempo).
 
-## Quick Start
+## Traffic Generators
 
-### 1. Start the Infrastructure
+15 `telemetrygen` containers run continuously, each emitting one signal type for one service under one tenant:
 
-```bash
-# Start the LGTM stack and OTEL collector
-docker-compose up -d loki mimir tempo grafana otel-collector
-```
+| Tenant | Service | Traces (req/s) | Logs (req/s) | Metrics (req/s) |
+|--------|---------|---------------|-------------|----------------|
+| tenant-a | web-app | 6 | 12 | 4 |
+| tenant-a | api-service | 4 | 7 | 3 |
+| tenant-a | auth-service | 2 | 5 | 2 |
+| tenant-b | frontend | 5 | 8 | 4 |
+| tenant-b | backend-api | 3 | 6 | 2 |
 
-### 2. Build and Run Your Proxy
+All generators start only after the collector passes its health check, which itself waits for Loki, Mimir, and Tempo to be healthy.
 
-```bash
-# Build the proxy
-go build -o otel-lgtm-proxy ./cmd
+## Files
 
-# Run the proxy
-./otel-lgtm-proxy
-```
+| File | Purpose |
+|------|---------|
+| `Dockerfile.telemetrygen` | Builds `telemetrygen` from source via `go install` (requires latest Go for current release) |
+| `Dockerfile.collector` | Copies `otelcol-contrib` binary into Alpine so `wget` is available for the healthcheck |
+| `otel-collector-config.yaml` | Collector config: OTLP receiver, 1s batch processor, health_check extension |
+| `loki-config.yaml` | Loki configuration |
+| `mimir-config.yaml` | Mimir configuration |
+| `tempo-config.yaml` | Tempo configuration |
+| `grafana-datasources.yaml` | Pre-provisioned Grafana datasources (Loki, Mimir, Tempo) |
 
-### 3. Run the Test Scripts
+## Verifying Fan-Out
 
-```bash
-# Send all telemetry types concurrently
-./send-telemetry.sh all
-
-# Or send specific types
-./send-telemetry.sh logs     # Only logs
-./send-telemetry.sh metrics  # Only metrics  
-./send-telemetry.sh traces   # Only traces
-```
-
-The scripts will:
-- Check if the collector is reachable
-- Start sending telemetry data every second
-- Use random tenants and services for realistic testing
-- Continue until you stop them with Ctrl+C
-
-## Configuration
-
-### Environment Variables
-
-All scripts can be configured with these environment variables:
-
-```bash
-# Collector endpoint (default: http://localhost:4318)
-export OTEL_COLLECTOR_ENDPOINT=http://localhost:4318
-
-# Tenants to simulate (default: tenant-a,tenant-b,tenant-c)
-export TENANTS=tenant1,tenant2,tenant3
-
-# Services to simulate (default: web-app,api-service,database,cache,auth-service)
-export SERVICES=app1,app2,app3
-
-# Interval between sends in seconds (default: 1)
-export INTERVAL=2
-```
-
-### Examples with Custom Configuration
-
-```bash
-# Send metrics every 2 seconds for specific tenants
-INTERVAL=2 TENANTS=acme-corp,widgets-inc ./send-telemetry.sh metrics
-
-# Send all telemetry with custom services
-SERVICES=frontend,backend,database ./send-telemetry.sh all
-
-# Use different collector endpoint
-OTEL_COLLECTOR_ENDPOINT=http://collector.example.com:4318 ./send-telemetry.sh traces
-```
-
-## Test Data Generated
-
-### Logs
-- INFO level log messages with tenant context
-- Random operations and log content
-- Structured metadata with tenant and service info
-
-### Metrics
-- **request_count**: Cumulative counter of requests per tenant/service
-- **memory_usage**: Gauge showing random memory usage values
-- Properly tagged with tenant and service labels
-
-### Traces  
-- HTTP operation spans with realistic names
-- Random HTTP methods (GET, POST, PUT, DELETE)
-- Random status codes (200, 201, 400, 404, 500)
-- Proper trace/span ID generation per tenant
+To confirm the proxy is correctly partitioning multi-tenant batches, look for a `POST /v1/traces` trace in Tempo under the `default` org (the proxy's own telemetry). It should have one `processor.send` child span per tenant, each with a `signal.tenant.records` attribute showing how many ResourceSpans were in that tenant's partition.
 
 ## Troubleshooting
 
-### "Collector not reachable"
+**Services not starting / stuck in `health: starting`**
+
 ```bash
-# Check if collector is running
-docker-compose ps otel-collector
-
-# Check collector logs
-docker-compose logs otel-collector
-
-# Start collector if needed
-docker-compose up -d otel-collector
+docker compose ps          # check which service is unhealthy
+docker compose logs <name> # inspect its output
 ```
 
-### "Failed to send" errors
+**Proxy not receiving data**
+
 ```bash
-# Check proxy logs
-tail -f proxy.log
-
-# Verify proxy is listening on correct port
-curl http://localhost:8443/health
-
-# Check collector configuration
-cat otel-collector-config.yaml
+# Check the collector can reach the proxy
+docker compose logs otel-collector | grep -i error
 ```
 
-### Data not appearing in backends
+**Data not appearing in Grafana**
+
+Loki, Mimir, and Tempo expose readiness endpoints — use these to confirm they accepted the data:
+
 ```bash
-# Check if services are healthy
-curl http://localhost:3100/ready  # Loki
-curl http://localhost:9009/ready  # Mimir  
-curl http://localhost:3200/ready  # Tempo
-curl http://localhost:3000/api/health  # Grafana
-
-# Check proxy logs for forwarding errors
-grep -i error proxy.log
-
-# Verify tenant headers are being set
-docker-compose logs otel-proxy | grep "X-Scope-OrgID"
+curl http://localhost:3100/ready   # Loki
+curl http://localhost:8080/ready   # Mimir
+curl http://localhost:3200/ready   # Tempo
 ```
-
-## Manual Data Verification
-
-### Query Loki (Logs)
-```bash
-# Query logs for a specific tenant
-curl -G "http://localhost:3100/loki/api/v1/query_range" \
-  --data-urlencode 'query={tenant="tenant-a"}' \
-  --data-urlencode 'start=1h' \
-  --data-urlencode 'end=now'
-```
-
-### Query Mimir (Metrics) 
-```bash
-# Query metrics for a specific tenant (with tenant header)
-curl -H "X-Scope-OrgID: tenant-a" \
-  "http://localhost:9009/prometheus/api/v1/query?query=request_count"
-```
-
-### Query Tempo (Traces)
-```bash
-# Search for traces from a specific service
-curl "http://localhost:3200/api/search?tags=service.name=web-app"
-```
-
-### View in Grafana
-1. Open http://localhost:3000 (admin/admin)
-2. Add data sources:
-   - Loki: http://loki:3100
-   - Prometheus: http://mimir:9009  
-   - Tempo: http://tempo:3200
-3. Create dashboards to visualize tenant-specific data
-
-## Development Tips

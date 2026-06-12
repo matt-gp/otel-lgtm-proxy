@@ -8,7 +8,7 @@ receivers:
 
 processors:
   batch:
-    timeout: 200ms
+    timeout: 1s
     send_batch_size: 512
     send_batch_max_size: 1024
   
@@ -34,6 +34,7 @@ exporters:
     verbosity: detailed
 
 service:
+  extensions: [health_check]
 
   pipelines:
     logs:
@@ -51,4 +52,6 @@ service:
       processors: [memory_limiter, batch]
       exporters: [otlphttp, debug]
 
-extensions: {}
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133

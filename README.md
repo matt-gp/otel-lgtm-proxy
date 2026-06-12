@@ -91,43 +91,21 @@ This section will help you quickly set up and run the otel-lgtm-proxy with Grafa
 
 ### Quick Start with Docker Compose
 
-The repository includes a complete development environment with the LGTM observability stack:
+The repository includes a complete development environment with the LGTM observability stack and pre-configured traffic generators:
 
 ```bash
 # 1. Clone the repository
 git clone https://github.com/matt-gp/otel-lgtm-proxy.git
 cd otel-lgtm-proxy
 
-# 2. Start the observability stack (Loki, Grafana, Tempo, Mimir)
-docker-compose up -d
+# 2. Start everything — LGTM stack, proxy, collector, and traffic generators
+docker compose up -d
 
-# 3. Wait for services to be ready (check health)
-docker-compose ps
-
-# 4. Build and run the proxy
-go build -o otel-lgtm-proxy ./cmd
-./otel-lgtm-proxy
+# 3. Check that all services are healthy
+docker compose ps
 ```
 
-The proxy will start on port `8080` and forward data to the local LGTM stack.
-
-### Testing with Sample Data
-
-The `test/` directory contains scripts for generating sample telemetry data:
-
-```bash
-# Send all types of telemetry (logs, metrics, traces)
-cd test
-./send-telemetry.sh all
-
-# Send specific telemetry types
-./send-telemetry.sh logs     # Only logs
-./send-telemetry.sh metrics  # Only metrics  
-./send-telemetry.sh traces   # Only traces
-
-# Customize tenant and interval
-TENANTS=tenant1,tenant2,tenant3 INTERVAL=2 ./send-telemetry.sh all
-```
+That's it. Docker Compose starts the full stack in dependency order (backends → collector → proxy → generators) and traffic begins flowing automatically.
 
 ### Accessing the Observability Stack
 
@@ -135,7 +113,7 @@ Once everything is running, you can access:
 
 | Service | URL | Description |
 |---------|-----|-------------|
-| **Grafana** | http://localhost:3000 | Visualization dashboard (admin/admin) |
+| **Grafana** | http://localhost:3000 | Visualization dashboard (no login required) |
 | **Loki** | http://localhost:3100 | Logs storage and querying |
 | **Mimir** | http://localhost:8080 | Metrics storage |
 | **Tempo** | http://localhost:3200 | Traces storage and querying |
@@ -169,27 +147,21 @@ export HTTP_LISTEN_ADDRESS=:8081        # Run on different port
 
 ### Verifying the Setup
 
-1. **Check proxy health** (if using docker-compose):
+1. **Check all services are running**:
+   ```bash
+   docker compose ps
+   ```
+
+2. **Check proxy health**:
    ```bash
    curl http://localhost:8443/health
    ```
 
-2. **Check all services are running**:
-   ```bash
-   docker-compose ps
-   ```
-
-3. **Send test data**:
-   ```bash
-   cd test
-   ./send-telemetry.sh logs
-   ```
-
-4. **View in Grafana**:
-   - Open http://localhost:3000 (admin/admin)
+3. **View in Grafana**:
+   - Open http://localhost:3000
    - Go to Explore
-   - Select Loki datasource
-   - Query: `{tenant="tenant-a"}` to see tenant-partitioned logs
+   - Select Loki datasource and query `{service_name="web-app"}` to see tenant-partitioned logs
+   - Select Tempo datasource to see traces with fan-out spans (`processor.send` children per tenant)
 
 ### What's Included
 
@@ -199,15 +171,14 @@ The development environment includes:
 - **Grafana**: Visualization and dashboard platform (with pre-configured datasources)
 - **Tempo**: Distributed tracing backend
 - **Mimir**: Prometheus-compatible metrics storage
-- **OpenTelemetry Collector**: OTLP receiver that forwards to the proxy
+- **OpenTelemetry Collector**: OTLP receiver that batches and forwards to the proxy
 - **Proxy Service**: The main application (built from source)
-- **Test Client**: Automated telemetry data generation
-- **Configuration Files**: Pre-configured for local development
+- **Traffic Generators**: 15 `telemetrygen` containers simulating two tenants (`tenant-a`, `tenant-b`) across five services (`web-app`, `api-service`, `auth-service`, `frontend`, `backend-api`), each emitting logs, metrics, and traces at varied rates
 
 ### Next Steps
 
 - Read the [Configuration Documentation](#configuration) for production setup
-- Explore the [Test Scripts Documentation](test/README.md) for advanced testing
+- Explore the [Test Environment Documentation](test/README.md) for details on the traffic generators
 - Check the [Development Guide](#development) for contributing
 
 ## Project Structure
@@ -325,7 +296,7 @@ receivers:
 
 processors:
   batch:
-    timeout: 200ms
+    timeout: 1s
     send_batch_size: 512
     send_batch_max_size: 1024
   
@@ -483,7 +454,7 @@ export TENANT_DEFAULT=default                     # Used if no tenant attribute 
 This allows flexibility when working with different OpenTelemetry SDKs or legacy systems that may use different attribute naming conventions.
 
 ### Logging
-Log level can be configured by either `LOG_LEVEL` or `OTEL_LOG_LEVEL`, `OTEL_LOG_LEVEL` takes precedence. If neither are specified `info` is used. Available log levels are `info`, `warn`, `error`, `debug` and `trace`.
+Log level can be configured via `LOG_LEVEL`. If not specified, `info` is used. Available log levels are `info`, `warn`, `error`, `debug` and `trace`.
 
 ### OpenTelemetry Configuration
 Standard OpenTelemetry environment variables are supported:
@@ -843,24 +814,21 @@ go generate ./internal/processor
 mockgen -package processor -source internal/processor/processor.go -destination internal/processor/processor_mock.go
 ```
 
-### Manual Testing Tools
+### Manual Testing
 
-The project includes bash scripts for manual testing and load generation:
+To send a one-off OTLP payload for quick checks, point `telemetrygen` or any OTLP-capable tool at the collector on port 4318:
 
 ```bash
-# Send all telemetry types (logs, metrics, traces) concurrently
-cd test && ./send-telemetry.sh all
-
-# Send specific types
-./send-telemetry.sh logs     # Only logs
-./send-telemetry.sh metrics  # Only metrics  
-./send-telemetry.sh traces   # Only traces
-
-# Custom configuration
-TENANTS=tenant1,tenant2 INTERVAL=2 ./send-telemetry.sh all
+# Example: send 10 traces for tenant-a directly to the proxy
+docker run --rm --network host \
+  ghcr.io/open-telemetry/opentelemetry-collector-contrib/telemetrygen:latest \
+  traces \
+  --otlp-endpoint=localhost:4317 \
+  --otlp-insecure \
+  '--otlp-attributes=tenant.id="tenant-a"' \
+  --service=my-service \
+  --traces=10
 ```
-
-The scripts continuously generate realistic telemetry data with random content and multi-tenant headers until stopped.
 
 ## Contributing
 

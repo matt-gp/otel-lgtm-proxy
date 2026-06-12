@@ -14,8 +14,8 @@ const (
 )
 
 // Marshal marshals the request using protobuf binary format.
-func Marshal(payload any) ([]byte, error) {
-	return proto.Marshal(payload.(proto.Message))
+func Marshal(payload proto.Message) ([]byte, error) {
+	return proto.Marshal(payload)
 }
 
 // Unmarshal unmarshals the request.
