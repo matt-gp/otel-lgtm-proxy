@@ -2,15 +2,18 @@
 package request
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"strings"
 
 	"github.com/matt-gp/otel-lgtm-proxy/internal/config"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
 )
 
 // AddHeaders adds the headers to the request.
-func AddHeaders(tenant string, req *http.Request, config *config.Config, headers string) {
+func AddHeaders(ctx context.Context, tenant string, req *http.Request, config *config.Config, headers string) {
 	req.Header.Set("Content-Type", "application/x-protobuf")
 	req.Header.Add(config.Tenant.Header, fmt.Sprintf(config.Tenant.Format, tenant))
 
@@ -22,4 +25,6 @@ func AddHeaders(tenant string, req *http.Request, config *config.Config, headers
 			req.Header.Add(kv[0], kv[1])
 		}
 	}
+
+	otel.GetTextMapPropagator().Inject(ctx, propagation.HeaderCarrier(req.Header))
 }

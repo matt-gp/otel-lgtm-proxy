@@ -136,7 +136,7 @@ func TestNewProvider(t *testing.T) {
 				}()
 			}
 
-			provider, err := NewProvider(config.Config{
+			provider, err := NewProvider(context.Background(), config.Config{
 				Service: config.Service{
 					Name:    "test-service",
 					Version: "1.0.0",
@@ -248,7 +248,7 @@ func TestShutdown(t *testing.T) {
 				}()
 			}
 
-			provider, err := NewProvider(config.Config{
+			provider, err := NewProvider(context.Background(), config.Config{
 				Service: config.Service{
 					Name:    "test-service",
 					Version: "1.0.0",
@@ -349,7 +349,7 @@ func clearOtelEnvVars() {
 		"OTEL_BSP_SCHEDULE_DELAY",        // Batch span processor schedule delay
 		"OTEL_METRIC_EXPORT_INTERVAL",    // Metrics export interval
 		"OTEL_RESOURCE_ATTRIBUTES",       // Resource attributes (key=value,key2=value2)
-		"LOG_LEVEL", // Log level for filtering exported log records
+		"LOG_LEVEL",                      // Log level for filtering exported log records
 	}
 
 	// Remove each environment variable

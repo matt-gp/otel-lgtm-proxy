@@ -13,13 +13,12 @@ import (
 
 	"github.com/matt-gp/otel-lgtm-proxy/internal/config"
 	"github.com/matt-gp/otel-lgtm-proxy/internal/logger"
+	"github.com/matt-gp/otel-lgtm-proxy/internal/otel"
 	"github.com/matt-gp/otel-lgtm-proxy/internal/util/request"
-	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/log"
 	"go.opentelemetry.io/otel/metric"
-	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
 	commonpb "go.opentelemetry.io/proto/otlp/common/v1"
 	logpb "go.opentelemetry.io/proto/otlp/logs/v1"
@@ -48,7 +47,7 @@ type ResourceData interface {
 type Processor[T ResourceData] struct {
 	config              *config.Config
 	endpoint            *config.Endpoint
-	signalType          string
+	signalTypeAttr      attribute.KeyValue
 	client              Client
 	logger              log.Logger
 	meter               metric.Meter
@@ -64,7 +63,7 @@ type Processor[T ResourceData] struct {
 func New[T ResourceData](
 	config *config.Config,
 	endpoint *config.Endpoint,
-	signalType string,
+	signalTypeAttr attribute.KeyValue,
 	client Client,
 	logger log.Logger,
 	meter metric.Meter,
@@ -103,7 +102,7 @@ func New[T ResourceData](
 	return &Processor[T]{
 		config:              config,
 		endpoint:            endpoint,
-		signalType:          signalType,
+		signalTypeAttr:      signalTypeAttr,
 		client:              client,
 		logger:              logger,
 		meter:               meter,
@@ -116,44 +115,19 @@ func New[T ResourceData](
 	}, nil
 }
 
-// signalTypeAttr returns a common attribute for the signal type to be used in metrics and traces.
-func (p *Processor[T]) signalTypeAttr() attribute.KeyValue {
-	return attribute.String("signal.type", p.signalType)
-}
-
-// signalTypeLogAttr returns a common log attribute for the signal type to be used in logs.
-func (p *Processor[T]) signalTypeLogAttr() log.KeyValue {
-	return log.String("signal.type", p.signalType)
-}
-
 // proxyRecordsMetricAdd adds the given count to the proxy records metric with common attributes.
-func (p *Processor[T]) proxyRecordsMetricAdd(ctx context.Context, tenant string, count int64, attrs []attribute.KeyValue) {
-	attrs = append(attrs, attribute.String("signal.tenant", tenant), p.signalTypeAttr())
-	p.proxyRecordsMetric.Add(
-		ctx,
-		count,
-		metric.WithAttributes(attrs...),
-	)
+func (p *Processor[T]) proxyRecordsMetricAdd(ctx context.Context, count int64, attrs []attribute.KeyValue) {
+	p.proxyRecordsMetric.Add(ctx, count, metric.WithAttributes(attrs...))
 }
 
 // proxyRequestsMetricAdd adds 1 to the proxy requests metric with common attributes.
-func (p *Processor[T]) proxyRequestsMetricAdd(ctx context.Context, tenant string, attrs []attribute.KeyValue) {
-	attrs = append(attrs, attribute.String("signal.tenant", tenant), p.signalTypeAttr())
-	p.proxyRequestsMetric.Add(
-		ctx,
-		1,
-		metric.WithAttributes(attrs...),
-	)
+func (p *Processor[T]) proxyRequestsMetricAdd(ctx context.Context, attrs []attribute.KeyValue) {
+	p.proxyRequestsMetric.Add(ctx, 1, metric.WithAttributes(attrs...))
 }
 
 // proxyLatencyMetricRecord records the given latency to the proxy latency metric with common attributes.
-func (p *Processor[T]) proxyLatencyMetricRecord(ctx context.Context, tenant string, latency int64, attrs []attribute.KeyValue) {
-	attrs = append(attrs, attribute.String("signal.tenant", tenant), p.signalTypeAttr())
-	p.proxyLatencyMetric.Record(
-		ctx,
-		latency,
-		metric.WithAttributes(attrs...),
-	)
+func (p *Processor[T]) proxyLatencyMetricRecord(ctx context.Context, latency int64, attrs []attribute.KeyValue) {
+	p.proxyLatencyMetric.Record(ctx, latency, metric.WithAttributes(attrs...))
 }
 
 // Partition partitions the resources by tenant.
@@ -163,11 +137,9 @@ func (p *Processor[T]) Partition(ctx context.Context, resources []T) map[string]
 	for _, resourceData := range resources {
 		tenant := p.extractTenantFromResource(resourceData)
 		if tenant == "" {
-			logger.Warn(
-				ctx,
-				p.logger,
+			logger.Warn(ctx, p.logger,
 				"No tenant found in attributes and no default tenant configured",
-				p.signalTypeLogAttr(),
+				p.signalTypeAttr,
 			)
 			continue
 		}
@@ -183,65 +155,32 @@ func (p *Processor[T]) Dispatch(ctx context.Context, tenantMap map[string][]T) e
 	errGroup, ctx := errgroup.WithContext(ctx)
 	for tenant, resources := range tenantMap {
 		errGroup.Go(func() error {
-			tenantAttribute := attribute.String("signal.tenant", tenant)
+			sharedAttributes := []attribute.KeyValue{
+				attribute.String(otel.SignalTenantAttrKey, tenant),
+				p.signalTypeAttr,
+			}
 			statusCode, err := p.send(ctx, tenant, resources)
 			if err != nil {
-				p.proxyRecordsMetricAdd(ctx, tenant, int64(len(resources)), nil)
-				logger.Error(ctx, p.logger, err.Error(), p.signalTypeLogAttr())
+				p.proxyRecordsMetricAdd(ctx, int64(len(resources)), sharedAttributes)
+				logger.Error(ctx, p.logger, err.Error(), sharedAttributes...)
 				return err
 			}
 
-			signalResponseStatusCodeAttr := attribute.String(
-				"signal.response.status.code",
+			sharedAttributes = append(sharedAttributes, attribute.String(
+				otel.SignalResponseStatusCodeAttrKey,
 				strconv.Itoa(statusCode),
-			)
+			))
 
-			p.proxyRecordsMetricAdd(
-				ctx,
-				tenant,
-				int64(len(resources)),
-				[]attribute.KeyValue{signalResponseStatusCodeAttr},
-			)
-
-			p.proxyRequestsMetricAdd(
-				ctx,
-				tenant,
-				[]attribute.KeyValue{signalResponseStatusCodeAttr},
-			)
+			p.proxyRecordsMetricAdd(ctx, int64(len(resources)), sharedAttributes)
+			p.proxyRequestsMetricAdd(ctx, sharedAttributes)
 
 			if statusCode >= http.StatusBadRequest {
-				logger.Error(
-					ctx,
-					p.logger,
-					fmt.Sprintf("received non-success status code: %d", statusCode),
-					p.signalTypeLogAttr(),
-					log.KeyValueFromAttribute(tenantAttribute),
-					log.KeyValueFromAttribute(signalResponseStatusCodeAttr),
-				)
-
+				logger.Error(ctx, p.logger, fmt.Sprintf("received non-success status code: %d", statusCode), sharedAttributes...)
 				return fmt.Errorf("received non-success status code: %d", statusCode)
 			}
 
-			logger.Debug(
-				ctx,
-				p.logger,
-				fmt.Sprintf(
-					"sent %d records",
-					len(resources),
-				),
-				p.signalTypeLogAttr(),
-				log.KeyValueFromAttribute(tenantAttribute),
-				log.KeyValueFromAttribute(signalResponseStatusCodeAttr),
-			)
-
-			logger.Trace(
-				ctx,
-				p.logger,
-				fmt.Sprintf("%+v", resources),
-				p.signalTypeLogAttr(),
-				log.KeyValueFromAttribute(tenantAttribute),
-				log.KeyValueFromAttribute(signalResponseStatusCodeAttr),
-			)
+			logger.Debug(ctx, p.logger, fmt.Sprintf("sent %d records", len(resources)), sharedAttributes...)
+			logger.Trace(ctx, p.logger, fmt.Sprintf("%+v", resources), sharedAttributes...)
 
 			return nil
 		})
@@ -251,20 +190,16 @@ func (p *Processor[T]) Dispatch(ctx context.Context, tenantMap map[string][]T) e
 }
 
 // send sends an individual request to the target.
-func (p *Processor[T]) send(
-	ctx context.Context,
-	tenant string,
-	resources []T,
-) (int, error) {
+func (p *Processor[T]) send(ctx context.Context, tenant string, resources []T) (int, error) {
 	start := time.Now()
 
-	signalTenantAttr := attribute.String("signal.tenant", tenant)
-	ctx, span := p.tracer.Start(ctx,
-		"processor.send",
+	sharedAttributes := []attribute.KeyValue{
+		attribute.String(otel.SignalTenantAttrKey, tenant),
+		p.signalTypeAttr,
+	}
+	ctx, span := p.tracer.Start(ctx, "processor.send",
 		trace.WithAttributes(
-			p.signalTypeAttr(),
-			signalTenantAttr,
-			attribute.Int("signal.tenant.records", len(resources)),
+			append(sharedAttributes, attribute.Int(otel.SignalTenantRecordsAttrKey, len(resources)))...,
 		),
 	)
 	defer span.End()
@@ -276,11 +211,8 @@ func (p *Processor[T]) send(
 		return 0, fmt.Errorf("failed to marshal data: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(
-		ctx,
-		http.MethodPost,
-		p.endpoint.Address,
-		io.NopCloser(bytes.NewReader(body)),
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
+		p.endpoint.Address, io.NopCloser(bytes.NewReader(body)),
 	)
 	if err != nil {
 		span.RecordError(err)
@@ -288,14 +220,7 @@ func (p *Processor[T]) send(
 		return 0, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	request.AddHeaders(
-		tenant,
-		req,
-		p.config,
-		p.endpoint.Headers,
-	)
-
-	otel.GetTextMapPropagator().Inject(ctx, propagation.HeaderCarrier(req.Header))
+	request.AddHeaders(ctx, tenant, req, p.config, p.endpoint.Headers)
 
 	resp, err := p.client.Do(req)
 	if err != nil {
@@ -310,11 +235,9 @@ func (p *Processor[T]) send(
 		}
 	}()
 
-	signalResponseStatusCodeAttr := attribute.String(
-		"signal.response.status.code",
-		strconv.Itoa(resp.StatusCode),
-	)
-	span.SetAttributes(signalResponseStatusCodeAttr)
+	statusCodeAttr := attribute.String(otel.SignalResponseStatusCodeAttrKey, strconv.Itoa(resp.StatusCode))
+	span.SetAttributes(statusCodeAttr)
+	sharedAttributes = append(sharedAttributes, statusCodeAttr)
 
 	if resp.StatusCode >= http.StatusBadRequest {
 		span.SetStatus(codes.Error, fmt.Sprintf("non-success status: %d", resp.StatusCode))
@@ -322,12 +245,7 @@ func (p *Processor[T]) send(
 		span.SetStatus(codes.Ok, "sent successfully")
 	}
 
-	p.proxyLatencyMetricRecord(
-		ctx,
-		tenant,
-		time.Since(start).Milliseconds(),
-		[]attribute.KeyValue{signalResponseStatusCodeAttr},
-	)
+	p.proxyLatencyMetricRecord(ctx, time.Since(start).Milliseconds(), sharedAttributes)
 
 	return resp.StatusCode, nil
 }
