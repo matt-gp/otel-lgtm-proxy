@@ -62,33 +62,3 @@ func Error(ctx context.Context, logger log.Logger, msg string, attrs ...attribut
 	}
 	logger.Emit(ctx, record)
 }
-
-// String creates a string-valued log attribute.
-func String(key, value string) attribute.KeyValue {
-	return attribute.String(key, value)
-}
-
-// Int creates an integer-valued log attribute.
-func Int(key string, value int) attribute.KeyValue {
-	return attribute.Int(key, value)
-}
-
-// Int64 creates an int64-valued log attribute.
-func Int64(key string, value int64) attribute.KeyValue {
-	return attribute.Int64(key, value)
-}
-
-// Float64 creates a float64-valued log attribute.
-func Float64(key string, value float64) attribute.KeyValue {
-	return attribute.Float64(key, value)
-}
-
-// Bool creates a boolean-valued log attribute.
-func Bool(key string, value bool) attribute.KeyValue {
-	return attribute.Bool(key, value)
-}
-
-// Err creates an error log attribute with key "error".
-func Err(err error) attribute.KeyValue {
-	return attribute.String("error", err.Error())
-}

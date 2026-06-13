@@ -153,45 +153,6 @@ func TestLogWithAttributes(t *testing.T) {
 	}
 }
 
-func TestHelperFunctions(t *testing.T) {
-	t.Run("String", func(t *testing.T) {
-		kv := String("key", "value")
-		assert.Equal(t, attribute.Key("key"), kv.Key)
-		assert.Equal(t, attribute.StringValue("value"), kv.Value)
-	})
-
-	t.Run("Int", func(t *testing.T) {
-		kv := Int("key", 42)
-		assert.Equal(t, attribute.Key("key"), kv.Key)
-		assert.Equal(t, attribute.Int64Value(42), kv.Value)
-	})
-
-	t.Run("Int64", func(t *testing.T) {
-		kv := Int64("key", 9223372036854775807)
-		assert.Equal(t, attribute.Key("key"), kv.Key)
-		assert.Equal(t, attribute.Int64Value(9223372036854775807), kv.Value)
-	})
-
-	t.Run("Float64", func(t *testing.T) {
-		kv := Float64("key", 3.14)
-		assert.Equal(t, attribute.Key("key"), kv.Key)
-		assert.Equal(t, attribute.Float64Value(3.14), kv.Value)
-	})
-
-	t.Run("Bool", func(t *testing.T) {
-		kv := Bool("key", true)
-		assert.Equal(t, attribute.Key("key"), kv.Key)
-		assert.Equal(t, attribute.BoolValue(true), kv.Value)
-	})
-
-	t.Run("Err", func(t *testing.T) {
-		testErr := errors.New("test error")
-		kv := Err(testErr)
-		assert.Equal(t, attribute.Key("error"), kv.Key)
-		assert.Equal(t, attribute.StringValue("test error"), kv.Value)
-	})
-}
-
 func TestLogOutput(t *testing.T) {
 	logger, buf, err := createTestLogger()
 	assert.NoError(t, err)
