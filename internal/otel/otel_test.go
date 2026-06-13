@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/matt-gp/otel-lgtm-proxy/internal/config"
 	"go.opentelemetry.io/contrib/processors/minsev"
 )
 
@@ -123,6 +122,9 @@ func TestNewProvider(t *testing.T) {
 			// Clear all OTEL env vars first
 			clearOtelEnvVars()
 
+			t.Setenv("OTEL_SERVICE_NAME", "test-service")
+			t.Setenv("OTEL_SERVICE_VERSION", "0.0.1")
+
 			// Set test-specific env vars
 			for key, value := range tt.envVars {
 				err := os.Setenv(key, value)
@@ -136,12 +138,7 @@ func TestNewProvider(t *testing.T) {
 				}()
 			}
 
-			provider, err := NewProvider(context.Background(), config.Config{
-				Service: config.Service{
-					Name:    "test-service",
-					Version: "1.0.0",
-				},
-			})
+			provider, err := NewProvider(context.Background())
 			if err != nil {
 				t.Fatalf("Failed to setup provider: %v", err)
 			}
@@ -248,12 +245,8 @@ func TestShutdown(t *testing.T) {
 				}()
 			}
 
-			provider, err := NewProvider(context.Background(), config.Config{
-				Service: config.Service{
-					Name:    "test-service",
-					Version: "1.0.0",
-				},
-			})
+			provider, err := NewProvider(context.Background())
+
 			if err != nil {
 				t.Fatalf("Failed to setup provider: %v", err)
 			}
@@ -335,6 +328,7 @@ func clearOtelEnvVars() {
 	envVars := []string{
 		"OTEL_SDK_DISABLED",              // Disables the entire OTEL SDK
 		"OTEL_SERVICE_NAME",              // Service name override
+		"OTEL_SERVICE_VERSION",           // Service version override
 		"OTEL_TRACES_EXPORTER",           // Trace exporter type (otlp, console, none, etc.)
 		"OTEL_METRICS_EXPORTER",          // Metrics exporter type (otlp, prometheus, console, none, etc.)
 		"OTEL_LOGS_EXPORTER",             // Logs exporter type (otlp, console, none, etc.)

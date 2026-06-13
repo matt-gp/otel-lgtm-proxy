@@ -8,7 +8,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/matt-gp/otel-lgtm-proxy/internal/config"
 	"go.opentelemetry.io/contrib/processors/minsev"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc"
@@ -82,7 +81,7 @@ type Provider struct {
 
 // NewProvider creates a new OpenTelemetry provider using environment variables
 // This function relies heavily on OpenTelemetry's built-in environment variable support
-func NewProvider(ctx context.Context, config config.Config) (*Provider, error) {
+func NewProvider(ctx context.Context) (*Provider, error) {
 	// Check if OpenTelemetry is disabled
 	if os.Getenv("OTEL_SDK_DISABLED") == "true" {
 		return &Provider{}, nil
@@ -92,8 +91,8 @@ func NewProvider(ctx context.Context, config config.Config) (*Provider, error) {
 	// merge this with OTEL_RESOURCE_ATTRIBUTES from environment
 	res, err := resource.New(ctx,
 		resource.WithAttributes(
-			semconv.ServiceNameKey.String(config.Service.Name),
-			semconv.ServiceVersionKey.String(config.Service.Version),
+			semconv.ServiceNameKey.String(os.Getenv("OTEL_SERVICE_NAME")),
+			semconv.ServiceVersionKey.String(os.Getenv("OTEL_SERVICE_VERSION")),
 		),
 		resource.WithFromEnv(),   // Automatically parse OTEL_RESOURCE_ATTRIBUTES
 		resource.WithProcess(),   // Add process information
