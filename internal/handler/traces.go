@@ -21,7 +21,7 @@ func (h *Handlers) Traces(w http.ResponseWriter, r *http.Request) {
 	// Unmarshal the incoming trace data
 	data, err := proto.Unmarshal(r, &tracepb.TracesData{})
 	if err != nil {
-		logger.Error(ctx, h.logger, err.Error())
+		logger.Error(ctx, err.Error())
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
@@ -30,7 +30,7 @@ func (h *Handlers) Traces(w http.ResponseWriter, r *http.Request) {
 
 	// Process the trace data
 	if err := h.tracesProcessor.Dispatch(ctx, h.tracesProcessor.Partition(ctx, data.GetResourceSpans())); err != nil {
-		logger.Error(ctx, h.logger, err.Error())
+		logger.Error(ctx, err.Error())
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())

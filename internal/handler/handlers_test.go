@@ -10,7 +10,6 @@ import (
 	"github.com/matt-gp/otel-lgtm-proxy/internal/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.opentelemetry.io/otel/log/noop"
 	noopmetric "go.opentelemetry.io/otel/metric/noop"
 	nooptrace "go.opentelemetry.io/otel/trace/noop"
 )
@@ -50,7 +49,6 @@ func TestNew(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			logger := noop.NewLoggerProvider().Logger("test")
 			meter := noopmetric.NewMeterProvider().Meter("test")
 			tracer := nooptrace.NewTracerProvider().Tracer("test")
 			router := http.NewServeMux()
@@ -61,7 +59,6 @@ func TestNew(t *testing.T) {
 				tt.logsClient,
 				tt.metricsClient,
 				tt.tracesClient,
-				logger,
 				meter,
 				tracer,
 			)
@@ -74,7 +71,6 @@ func TestNew(t *testing.T) {
 				assert.NotNil(t, handlers)
 				assert.Equal(t, tt.config, handlers.config)
 				assert.Equal(t, router, handlers.router)
-				assert.NotNil(t, handlers.logger)
 				assert.NotNil(t, handlers.meter)
 				assert.NotNil(t, handlers.tracer)
 				// Verify processors were created
@@ -105,7 +101,6 @@ func TestRegister(t *testing.T) {
 		}
 
 		router := http.NewServeMux()
-		logger := noop.NewLoggerProvider().Logger("test")
 		meter := noopmetric.NewMeterProvider().Meter("test")
 		tracer := nooptrace.NewTracerProvider().Tracer("test")
 
@@ -115,7 +110,6 @@ func TestRegister(t *testing.T) {
 			&http.Client{},
 			&http.Client{},
 			&http.Client{},
-			logger,
 			meter,
 			tracer,
 		)
@@ -189,7 +183,6 @@ func TestNewServer(t *testing.T) {
 			}
 
 			router := http.NewServeMux()
-			logger := noop.NewLoggerProvider().Logger("test")
 			meter := noopmetric.NewMeterProvider().Meter("test")
 			tracer := nooptrace.NewTracerProvider().Tracer("test")
 
@@ -199,7 +192,6 @@ func TestNewServer(t *testing.T) {
 				&http.Client{},
 				&http.Client{},
 				&http.Client{},
-				logger,
 				meter,
 				tracer,
 			)

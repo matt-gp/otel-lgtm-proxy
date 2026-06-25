@@ -12,7 +12,6 @@ import (
 	"github.com/matt-gp/otel-lgtm-proxy/internal/util/proto"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/log"
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
 	logpb "go.opentelemetry.io/proto/otlp/logs/v1"
@@ -27,7 +26,6 @@ var signalTypeAttrKey = "signal.type"
 type Handlers struct {
 	config           *config.Config
 	router           *http.ServeMux
-	logger           log.Logger
 	meter            metric.Meter
 	tracer           trace.Tracer
 	logsProcessor    processor.Processor[*logpb.ResourceLogs]
@@ -42,7 +40,6 @@ func New(
 	logsClient processor.Client,
 	metricsClient processor.Client,
 	tracesClient processor.Client,
-	logger log.Logger,
 	meter metric.Meter,
 	tracer trace.Tracer,
 ) (*Handlers, error) {
@@ -52,7 +49,6 @@ func New(
 		&config.Logs,
 		attribute.String(signalTypeAttrKey, "logs"),
 		logsClient,
-		logger,
 		meter,
 		tracer,
 		func(rl *logpb.ResourceLogs) *resourcepb.Resource {
@@ -75,7 +71,6 @@ func New(
 		&config.Metrics,
 		attribute.String(signalTypeAttrKey, "metrics"),
 		metricsClient,
-		logger,
 		meter,
 		tracer,
 		func(rm *metricpb.ResourceMetrics) *resourcepb.Resource {
@@ -98,7 +93,6 @@ func New(
 		&config.Traces,
 		attribute.String(signalTypeAttrKey, "traces"),
 		tracesClient,
-		logger,
 		meter,
 		tracer,
 		func(rs *tracepb.ResourceSpans) *resourcepb.Resource {
@@ -118,7 +112,6 @@ func New(
 	return &Handlers{
 		config:           config,
 		router:           router,
-		logger:           logger,
 		meter:            meter,
 		tracer:           tracer,
 		logsProcessor:    *logsProcessor,
@@ -129,11 +122,7 @@ func New(
 
 // Register registers the given handler function for the specified pattern on the provided router.
 func (h *Handlers) Register(ctx context.Context, pattern string, handlerFunc func(http.ResponseWriter, *http.Request)) {
-	logger.Info(
-		ctx,
-		h.logger,
-		"registering handler "+pattern,
-	)
+	logger.Info(ctx, "registering handler "+pattern)
 	h.router.Handle(pattern, otelhttp.NewHandler(http.HandlerFunc(handlerFunc), pattern))
 }
 
