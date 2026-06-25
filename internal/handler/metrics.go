@@ -21,7 +21,7 @@ func (h *Handlers) Metrics(w http.ResponseWriter, r *http.Request) {
 	// Unmarshal the incoming metric data
 	data, err := proto.Unmarshal(r, &metricpb.MetricsData{})
 	if err != nil {
-		logger.Error(ctx, h.logger, err.Error())
+		logger.Error(ctx, err.Error())
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
@@ -30,7 +30,7 @@ func (h *Handlers) Metrics(w http.ResponseWriter, r *http.Request) {
 
 	// Process the metric data
 	if err := h.metricsProcessor.Dispatch(ctx, h.metricsProcessor.Partition(ctx, data.GetResourceMetrics())); err != nil {
-		logger.Error(ctx, h.logger, err.Error())
+		logger.Error(ctx, err.Error())
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())

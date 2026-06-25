@@ -11,6 +11,6 @@ import (
 func (h *Handlers) Health(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	if _, err := w.Write([]byte("OK")); err != nil {
-		logger.Error(r.Context(), h.logger, err.Error())
+		logger.Error(r.Context(), err.Error())
 	}
 }

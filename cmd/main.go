@@ -17,7 +17,6 @@ import (
 	"github.com/matt-gp/otel-lgtm-proxy/internal/handler"
 	"github.com/matt-gp/otel-lgtm-proxy/internal/util/cert"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/log"
 )
 
 var (
@@ -50,35 +49,34 @@ func main() {
 	meterProvider := provider.MeterProvider.Meter("metrics")
 	tracerProvider := provider.TracerProvider.Tracer("traces")
 
+	// Initialize logger
+	logger.SetProvider(loggingProvider)
+
 	// Start application
-	logger.Info(
-		ctx,
-		loggingProvider,
-		"Starting application",
-	)
+	logger.Info(ctx, "Starting application")
 
 	// Initialize signal handling
 	ctx, stop := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
 	// Create HTTP clients for logs
-	logsClient, err := newClient(ctx, loggingProvider, &cfg.Logs)
+	logsClient, err := newClient(ctx, &cfg.Logs)
 	if err != nil {
-		logger.Error(ctx, loggingProvider, "failed to create logs client", attribute.String(errAttrKey, err.Error()))
+		logger.Error(ctx, "failed to create logs client", attribute.String(errAttrKey, err.Error()))
 		os.Exit(1)
 	}
 
 	// Create HTTP clients for metrics
-	metricsClient, err := newClient(ctx, loggingProvider, &cfg.Metrics)
+	metricsClient, err := newClient(ctx, &cfg.Metrics)
 	if err != nil {
-		logger.Error(ctx, loggingProvider, "failed to create metrics client", attribute.String(errAttrKey, err.Error()))
+		logger.Error(ctx, "failed to create metrics client", attribute.String(errAttrKey, err.Error()))
 		os.Exit(1)
 	}
 
 	// Create HTTP clients for traces
-	tracesClient, err := newClient(ctx, loggingProvider, &cfg.Traces)
+	tracesClient, err := newClient(ctx, &cfg.Traces)
 	if err != nil {
-		logger.Error(ctx, loggingProvider, "failed to create traces client", attribute.String(errAttrKey, err.Error()))
+		logger.Error(ctx, "failed to create traces client", attribute.String(errAttrKey, err.Error()))
 		os.Exit(1)
 	}
 
@@ -89,16 +87,11 @@ func main() {
 		logsClient,
 		metricsClient,
 		tracesClient,
-		loggingProvider,
 		meterProvider,
 		tracerProvider,
 	)
 	if err != nil {
-		logger.Error(
-			ctx,
-			loggingProvider,
-			err.Error(),
-		)
+		logger.Error(ctx, err.Error())
 		os.Exit(1)
 	}
 
@@ -130,7 +123,7 @@ func main() {
 	if tlsEnabled {
 		certPair, err := tls.LoadX509KeyPair(cfg.HTTP.TLS.CertFile, cfg.HTTP.TLS.KeyFile)
 		if err != nil {
-			logger.Error(ctx, loggingProvider, "unable to read certificate or key file",
+			logger.Error(ctx, "unable to read certificate or key file",
 				append(httpAttributes, attribute.String(errAttrKey, err.Error()))...,
 			)
 			os.Exit(1)
@@ -139,7 +132,7 @@ func main() {
 		caPool := x509.NewCertPool()
 		caCert, err := os.ReadFile(cfg.HTTP.TLS.CAFile)
 		if err != nil {
-			logger.Error(ctx, loggingProvider, "unable to read CA file",
+			logger.Error(ctx, "unable to read CA file",
 				append(httpAttributes, attribute.String(errAttrKey, err.Error()))...,
 			)
 			os.Exit(1)
@@ -156,7 +149,7 @@ func main() {
 	server := h.NewServer(tlsConfig)
 
 	go func() {
-		logger.Info(ctx, loggingProvider, "starting server", httpAttributes...)
+		logger.Info(ctx, "starting server", httpAttributes...)
 
 		if tlsEnabled {
 			err = server.ListenAndServeTLS("", "")
@@ -165,7 +158,7 @@ func main() {
 		}
 
 		if err != nil && !errors.Is(err, http.ErrServerClosed) {
-			logger.Error(ctx, loggingProvider, err.Error(), httpAttributes...)
+			logger.Error(ctx, err.Error(), httpAttributes...)
 			os.Exit(1)
 		}
 	}()
@@ -178,7 +171,7 @@ func main() {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.TimeoutShutdown)
 	defer cancel()
 	if err := server.Shutdown(shutdownCtx); err != nil {
-		logger.Error(ctx, loggingProvider, "http close error",
+		logger.Error(ctx, "http close error",
 			append(httpAttributes, attribute.String(errAttrKey, err.Error()))...,
 		)
 		os.Exit(1)
@@ -186,7 +179,7 @@ func main() {
 }
 
 // newClient creates a new HTTP client with the specified timeout and TLS configuration.
-func newClient(ctx context.Context, loggingProvider log.Logger, endpoint *config.Endpoint) (*http.Client, error) {
+func newClient(ctx context.Context, endpoint *config.Endpoint) (*http.Client, error) {
 	clientAttributes := []attribute.KeyValue{
 		attribute.String(httpClientURLAttrKey, endpoint.Address),
 		attribute.Int64(httpClientTimeoutAttrKey, int64(endpoint.Timeout.Seconds())),
@@ -197,7 +190,7 @@ func newClient(ctx context.Context, loggingProvider log.Logger, endpoint *config
 	if cert.TLSEnabled(&endpoint.TLS) {
 		tlsConfig, err := cert.CreateTLSConfig(endpoint)
 		if err != nil {
-			logger.Error(ctx, loggingProvider, "failed to create TLS config",
+			logger.Error(ctx, "failed to create TLS config",
 				append(clientAttributes, attribute.String(errAttrKey, err.Error()))...,
 			)
 			return nil, err
@@ -205,7 +198,7 @@ func newClient(ctx context.Context, loggingProvider log.Logger, endpoint *config
 		c.Transport = &http.Transport{TLSClientConfig: tlsConfig}
 	}
 
-	logger.Info(ctx, loggingProvider, "created HTTP client", clientAttributes...)
+	logger.Info(ctx, "created HTTP client", clientAttributes...)
 
 	return c, nil
 }

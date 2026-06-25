@@ -8,12 +8,10 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/matt-gp/core/otel"
 	"github.com/matt-gp/otel-lgtm-proxy/internal/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/log/noop"
 	noopmetric "go.opentelemetry.io/otel/metric/noop"
 	nooptrace "go.opentelemetry.io/otel/trace/noop"
 	commonpb "go.opentelemetry.io/proto/otlp/common/v1"
@@ -21,6 +19,8 @@ import (
 	resourcepb "go.opentelemetry.io/proto/otlp/resource/v1"
 	"go.uber.org/mock/gomock"
 )
+
+var signalTypeAttrKey = "signal.type"
 
 func TestNew(t *testing.T) {
 	tests := []struct {
@@ -44,7 +44,7 @@ func TestNew(t *testing.T) {
 				Address: "http://localhost:3100",
 			},
 			signalTypeAttr: attribute.KeyValue{
-				Key:   attribute.Key(string(otel.SignalTypeAttrKey)),
+				Key:   attribute.Key(string(signalTypeAttrKey)),
 				Value: attribute.StringValue("logs"),
 			},
 			client:  &http.Client{},
@@ -65,7 +65,7 @@ func TestNew(t *testing.T) {
 				},
 			},
 			signalTypeAttr: attribute.KeyValue{
-				Key:   attribute.Key(string(otel.SignalTypeAttrKey)),
+				Key:   attribute.Key(string(signalTypeAttrKey)),
 				Value: attribute.StringValue("logs"),
 			},
 			client:  &http.Client{},
@@ -75,7 +75,6 @@ func TestNew(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			logger := noop.NewLoggerProvider().Logger("test")
 			meter := noopmetric.NewMeterProvider().Meter("test")
 			tracer := nooptrace.NewTracerProvider().Tracer("test")
 
@@ -91,7 +90,6 @@ func TestNew(t *testing.T) {
 				tt.endpoint,
 				tt.signalTypeAttr,
 				tt.client,
-				logger,
 				meter,
 				tracer,
 				getResource,
@@ -264,7 +262,6 @@ func TestExtractTenantFromResource(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			logger := noop.NewLoggerProvider().Logger("test")
 			meter := noopmetric.NewMeterProvider().Meter("test")
 			tracer := nooptrace.NewTracerProvider().Tracer("test")
 
@@ -278,9 +275,8 @@ func TestExtractTenantFromResource(t *testing.T) {
 			proc, err := New(
 				tt.config,
 				&config.Endpoint{Address: "http://localhost:3100"},
-				attribute.KeyValue{Key: attribute.Key(string(otel.SignalTypeAttrKey)), Value: attribute.StringValue("logs")},
+				attribute.KeyValue{Key: attribute.Key(string(signalTypeAttrKey)), Value: attribute.StringValue("logs")},
 				&http.Client{},
-				logger,
 				meter,
 				tracer,
 				getResource,
@@ -486,7 +482,6 @@ func TestPartition(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			logger := noop.NewLoggerProvider().Logger("test")
 			meter := noopmetric.NewMeterProvider().Meter("test")
 			tracer := nooptrace.NewTracerProvider().Tracer("test")
 
@@ -500,9 +495,8 @@ func TestPartition(t *testing.T) {
 			proc, err := New(
 				tt.config,
 				&config.Endpoint{Address: "http://localhost:3100"},
-				attribute.KeyValue{Key: attribute.Key(string(otel.SignalTypeAttrKey)), Value: attribute.StringValue("logs")},
+				attribute.KeyValue{Key: attribute.Key(string(signalTypeAttrKey)), Value: attribute.StringValue("logs")},
 				&http.Client{},
-				logger,
 				meter,
 				tracer,
 				getResource,
@@ -715,7 +709,6 @@ func TestDispatch(t *testing.T) {
 			ctrl := gomock.NewController(t)
 			defer ctrl.Finish()
 
-			logger := noop.NewLoggerProvider().Logger("test")
 			meter := noopmetric.NewMeterProvider().Meter("test")
 			tracer := nooptrace.NewTracerProvider().Tracer("test")
 
@@ -749,9 +742,8 @@ func TestDispatch(t *testing.T) {
 					},
 				},
 				&config.Endpoint{Address: "http://localhost:3100"},
-				attribute.KeyValue{Key: attribute.Key(string(otel.SignalTypeAttrKey)), Value: attribute.StringValue("logs")},
+				attribute.KeyValue{Key: attribute.Key(string(signalTypeAttrKey)), Value: attribute.StringValue("logs")},
 				mockClient,
-				logger,
 				meter,
 				tracer,
 				getResource,
@@ -860,7 +852,6 @@ func TestSend(t *testing.T) {
 			ctrl := gomock.NewController(t)
 			defer ctrl.Finish()
 
-			logger := noop.NewLoggerProvider().Logger("test")
 			meter := noopmetric.NewMeterProvider().Meter("test")
 			tracer := nooptrace.NewTracerProvider().Tracer("test")
 
@@ -888,9 +879,8 @@ func TestSend(t *testing.T) {
 					},
 				},
 				&config.Endpoint{Address: "http://localhost:3100"},
-				attribute.KeyValue{Key: attribute.Key(string(otel.SignalTypeAttrKey)), Value: attribute.StringValue("logs")},
+				attribute.KeyValue{Key: attribute.Key(string(signalTypeAttrKey)), Value: attribute.StringValue("logs")},
 				mockClient,
-				logger,
 				meter,
 				tracer,
 				getResource,

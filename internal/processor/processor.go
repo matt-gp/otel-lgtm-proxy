@@ -16,7 +16,6 @@ import (
 	"github.com/matt-gp/otel-lgtm-proxy/internal/util/request"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
-	"go.opentelemetry.io/otel/log"
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
 	commonpb "go.opentelemetry.io/proto/otlp/common/v1"
@@ -54,8 +53,6 @@ type Processor[T ResourceData] struct {
 	endpoint            *config.Endpoint
 	signalTypeAttr      attribute.KeyValue
 	client              Client
-	logger              log.Logger
-	meter               metric.Meter
 	tracer              trace.Tracer
 	proxyRecordsMetric  metric.Int64Counter
 	proxyRequestsMetric metric.Int64Counter
@@ -70,7 +67,6 @@ func New[T ResourceData](
 	endpoint *config.Endpoint,
 	signalTypeAttr attribute.KeyValue,
 	client Client,
-	logger log.Logger,
 	meter metric.Meter,
 	tracer trace.Tracer,
 	getResource func(T) *resourcepb.Resource,
@@ -109,8 +105,6 @@ func New[T ResourceData](
 		endpoint:            endpoint,
 		signalTypeAttr:      signalTypeAttr,
 		client:              client,
-		logger:              logger,
-		meter:               meter,
 		tracer:              tracer,
 		proxyRecordsMetric:  proxyRecordsMetric,
 		proxyRequestsMetric: proxyRequestsMetric,
@@ -142,10 +136,7 @@ func (p *Processor[T]) Partition(ctx context.Context, resources []T) map[string]
 	for _, resourceData := range resources {
 		tenant := p.extractTenantFromResource(resourceData)
 		if tenant == "" {
-			logger.Warn(ctx, p.logger,
-				"No tenant found in attributes and no default tenant configured",
-				p.signalTypeAttr,
-			)
+			logger.Warn(ctx, "No tenant found in attributes and no default tenant configured", p.signalTypeAttr)
 			continue
 		}
 
@@ -167,7 +158,7 @@ func (p *Processor[T]) Dispatch(ctx context.Context, tenantMap map[string][]T) e
 			statusCode, err := p.send(ctx, tenant, resources)
 			if err != nil {
 				p.proxyRecordsMetricAdd(ctx, int64(len(resources)), sharedAttributes)
-				logger.Error(ctx, p.logger, err.Error(), sharedAttributes...)
+				logger.Error(ctx, err.Error(), sharedAttributes...)
 				return err
 			}
 
@@ -180,12 +171,12 @@ func (p *Processor[T]) Dispatch(ctx context.Context, tenantMap map[string][]T) e
 			p.proxyRequestsMetricAdd(ctx, sharedAttributes)
 
 			if statusCode >= http.StatusBadRequest {
-				logger.Error(ctx, p.logger, fmt.Sprintf("received non-success status code: %d", statusCode), sharedAttributes...)
+				logger.Error(ctx, fmt.Sprintf("received non-success status code: %d", statusCode), sharedAttributes...)
 				return fmt.Errorf("received non-success status code: %d", statusCode)
 			}
 
-			logger.Debug(ctx, p.logger, fmt.Sprintf("sent %d records", len(resources)), sharedAttributes...)
-			logger.Trace(ctx, p.logger, fmt.Sprintf("%+v", resources), sharedAttributes...)
+			logger.Debug(ctx, fmt.Sprintf("sent %d records", len(resources)), sharedAttributes...)
+			logger.Trace(ctx, fmt.Sprintf("%+v", resources), sharedAttributes...)
 
 			return nil
 		})
