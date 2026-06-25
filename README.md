@@ -202,16 +202,10 @@ internal/
 ├── processor/                 # Generic telemetry processing
 │   ├── processor.go          # Generic processor with partitioning and dispatch
 │   ├── processor_test.go     # Comprehensive table-driven tests
-├── otel/                     # OpenTelemetry provider setup
-│   ├── otel.go              # Provider initialization and configuration
-│   └── otel_test.go         # Provider tests
 ├── util/                     # Utility packages
 │   ├── cert/                # TLS certificate utilities
 │   ├── proto/              # Protobuf utilities
 │   └── request/            # HTTP request utilities
-└── logger/                   # Structured logging utilities
-    ├── logger.go            # Logging helpers
-    └── logger_test.go       # Logging tests
 ```
 
 ### Package Responsibilities
@@ -220,11 +214,9 @@ internal/
 - **`internal/config/`**: Environment-based configuration with validation
 - **`internal/handler/`**: HTTP handlers with pre-initialized processors for each signal type
 - **`internal/processor/`**: Generic `Processor[T]` that partitions by tenant and dispatches concurrent requests
-- **`internal/otel/`**: OpenTelemetry provider setup with protocol configuration
 - **`internal/util/cert/`**: TLS configuration and certificate management
 - **`internal/util/proto/`**: Protobuf utility functions
 - **`internal/util/request/`**: HTTP request utility functions
-- **`internal/logger/`**: Structured logging with OpenTelemetry integration
 
 ### Architecture Overview
 
