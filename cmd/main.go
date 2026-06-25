@@ -20,6 +20,15 @@ import (
 	"go.opentelemetry.io/otel/log"
 )
 
+var (
+	errAttrKey                  = "error"
+	httpAddressAttrKey          = "http.address"
+	httpTLSEnabledAttrKey       = "http.tls.enabled"
+	httpClientURLAttrKey        = "http.client.url"
+	httpClientTimeoutAttrKey    = "http.client.timeout"
+	httpClientTLSEnabledAttrKey = "http.client.tls.enabled"
+)
+
 func main() {
 	// Initialize context
 	ctx := context.Background()
@@ -55,21 +64,21 @@ func main() {
 	// Create HTTP clients for logs
 	logsClient, err := newClient(ctx, loggingProvider, &cfg.Logs)
 	if err != nil {
-		logger.Error(ctx, loggingProvider, "failed to create logs client", attribute.String(otel.ErrorAttrKey, err.Error()))
+		logger.Error(ctx, loggingProvider, "failed to create logs client", attribute.String(errAttrKey, err.Error()))
 		os.Exit(1)
 	}
 
 	// Create HTTP clients for metrics
 	metricsClient, err := newClient(ctx, loggingProvider, &cfg.Metrics)
 	if err != nil {
-		logger.Error(ctx, loggingProvider, "failed to create metrics client", attribute.String(otel.ErrorAttrKey, err.Error()))
+		logger.Error(ctx, loggingProvider, "failed to create metrics client", attribute.String(errAttrKey, err.Error()))
 		os.Exit(1)
 	}
 
 	// Create HTTP clients for traces
 	tracesClient, err := newClient(ctx, loggingProvider, &cfg.Traces)
 	if err != nil {
-		logger.Error(ctx, loggingProvider, "failed to create traces client", attribute.String(otel.ErrorAttrKey, err.Error()))
+		logger.Error(ctx, loggingProvider, "failed to create traces client", attribute.String(errAttrKey, err.Error()))
 		os.Exit(1)
 	}
 
@@ -113,8 +122,8 @@ func main() {
 	// Add attributes for TLS configuration
 	tlsEnabled := cert.TLSEnabled(&cfg.HTTP.TLS)
 	httpAttributes := []attribute.KeyValue{
-		attribute.String(otel.HTTPAddressAttrKey, cfg.HTTP.Address),
-		attribute.Bool(otel.HTTPTLSEnabledAttrKey, tlsEnabled),
+		attribute.String(httpAddressAttrKey, cfg.HTTP.Address),
+		attribute.Bool(httpTLSEnabledAttrKey, tlsEnabled),
 	}
 
 	// Load TLS certificates
@@ -122,7 +131,7 @@ func main() {
 		certPair, err := tls.LoadX509KeyPair(cfg.HTTP.TLS.CertFile, cfg.HTTP.TLS.KeyFile)
 		if err != nil {
 			logger.Error(ctx, loggingProvider, "unable to read certificate or key file",
-				append(httpAttributes, attribute.String(otel.ErrorAttrKey, err.Error()))...,
+				append(httpAttributes, attribute.String(errAttrKey, err.Error()))...,
 			)
 			os.Exit(1)
 		}
@@ -131,7 +140,7 @@ func main() {
 		caCert, err := os.ReadFile(cfg.HTTP.TLS.CAFile)
 		if err != nil {
 			logger.Error(ctx, loggingProvider, "unable to read CA file",
-				append(httpAttributes, attribute.String(otel.ErrorAttrKey, err.Error()))...,
+				append(httpAttributes, attribute.String(errAttrKey, err.Error()))...,
 			)
 			os.Exit(1)
 		}
@@ -170,7 +179,7 @@ func main() {
 	defer cancel()
 	if err := server.Shutdown(shutdownCtx); err != nil {
 		logger.Error(ctx, loggingProvider, "http close error",
-			append(httpAttributes, attribute.String(otel.ErrorAttrKey, err.Error()))...,
+			append(httpAttributes, attribute.String(errAttrKey, err.Error()))...,
 		)
 		os.Exit(1)
 	}
@@ -179,9 +188,9 @@ func main() {
 // newClient creates a new HTTP client with the specified timeout and TLS configuration.
 func newClient(ctx context.Context, loggingProvider log.Logger, endpoint *config.Endpoint) (*http.Client, error) {
 	clientAttributes := []attribute.KeyValue{
-		attribute.String(otel.HTTPClientURLAttrKey, endpoint.Address),
-		attribute.Int64(otel.HTTPClientTimeoutAttrKey, int64(endpoint.Timeout.Seconds())),
-		attribute.Bool(otel.HTTPClientTLSEnabledAttrKey, cert.TLSEnabled(&endpoint.TLS)),
+		attribute.String(httpClientURLAttrKey, endpoint.Address),
+		attribute.Int64(httpClientTimeoutAttrKey, int64(endpoint.Timeout.Seconds())),
+		attribute.Bool(httpClientTLSEnabledAttrKey, cert.TLSEnabled(&endpoint.TLS)),
 	}
 
 	c := &http.Client{Timeout: endpoint.Timeout}
@@ -189,7 +198,7 @@ func newClient(ctx context.Context, loggingProvider log.Logger, endpoint *config
 		tlsConfig, err := cert.CreateTLSConfig(endpoint)
 		if err != nil {
 			logger.Error(ctx, loggingProvider, "failed to create TLS config",
-				append(clientAttributes, attribute.String(otel.ErrorAttrKey, err.Error()))...,
+				append(clientAttributes, attribute.String(errAttrKey, err.Error()))...,
 			)
 			return nil, err
 		}

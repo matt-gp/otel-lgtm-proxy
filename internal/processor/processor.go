@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/matt-gp/core/logger"
-	"github.com/matt-gp/core/otel"
 	"github.com/matt-gp/otel-lgtm-proxy/internal/config"
 	"github.com/matt-gp/otel-lgtm-proxy/internal/util/request"
 	"go.opentelemetry.io/otel/attribute"
@@ -26,6 +25,12 @@ import (
 	resourcepb "go.opentelemetry.io/proto/otlp/resource/v1"
 	tracepb "go.opentelemetry.io/proto/otlp/trace/v1"
 	"golang.org/x/sync/errgroup"
+)
+
+var (
+	signalTenantAttrKey             = "signal.tenant"
+	signalResponseStatusCodeAttrKey = "signal.response.status.code"
+	signalTenantRecordsAttrKey      = "signal.tenant.records"
 )
 
 // Client is an interface for making HTTP requests.
@@ -156,7 +161,7 @@ func (p *Processor[T]) Dispatch(ctx context.Context, tenantMap map[string][]T) e
 	for tenant, resources := range tenantMap {
 		errGroup.Go(func() error {
 			sharedAttributes := []attribute.KeyValue{
-				attribute.String(otel.SignalTenantAttrKey, tenant),
+				attribute.String(signalTenantAttrKey, tenant),
 				p.signalTypeAttr,
 			}
 			statusCode, err := p.send(ctx, tenant, resources)
@@ -167,7 +172,7 @@ func (p *Processor[T]) Dispatch(ctx context.Context, tenantMap map[string][]T) e
 			}
 
 			sharedAttributes = append(sharedAttributes, attribute.String(
-				otel.SignalResponseStatusCodeAttrKey,
+				signalResponseStatusCodeAttrKey,
 				strconv.Itoa(statusCode),
 			))
 
@@ -194,12 +199,12 @@ func (p *Processor[T]) send(ctx context.Context, tenant string, resources []T) (
 	start := time.Now()
 
 	sharedAttributes := []attribute.KeyValue{
-		attribute.String(otel.SignalTenantAttrKey, tenant),
+		attribute.String(signalTenantAttrKey, tenant),
 		p.signalTypeAttr,
 	}
 	ctx, span := p.tracer.Start(ctx, "processor.send",
 		trace.WithAttributes(
-			append(sharedAttributes, attribute.Int(otel.SignalTenantRecordsAttrKey, len(resources)))...,
+			append(sharedAttributes, attribute.Int(signalTenantRecordsAttrKey, len(resources)))...,
 		),
 	)
 	defer span.End()
@@ -235,7 +240,7 @@ func (p *Processor[T]) send(ctx context.Context, tenant string, resources []T) (
 		}
 	}()
 
-	statusCodeAttr := attribute.String(otel.SignalResponseStatusCodeAttrKey, strconv.Itoa(resp.StatusCode))
+	statusCodeAttr := attribute.String(signalResponseStatusCodeAttrKey, strconv.Itoa(resp.StatusCode))
 	span.SetAttributes(statusCodeAttr)
 	sharedAttributes = append(sharedAttributes, statusCodeAttr)
 
