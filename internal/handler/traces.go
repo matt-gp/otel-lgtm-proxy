@@ -16,7 +16,7 @@ import (
 func (h *Handlers) Traces(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	span := trace.SpanFromContext(ctx)
-	span.SetAttributes(attribute.String("signal.type", "traces"))
+	span.SetAttributes(attribute.String(signalTypeAttrKey, "traces"))
 
 	// Unmarshal the incoming trace data
 	data, err := proto.Unmarshal(r, &tracepb.TracesData{})

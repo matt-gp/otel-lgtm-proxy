@@ -7,7 +7,6 @@ import (
 	"net/http"
 
 	"github.com/matt-gp/core/logger"
-	"github.com/matt-gp/core/otel"
 	"github.com/matt-gp/otel-lgtm-proxy/internal/config"
 	"github.com/matt-gp/otel-lgtm-proxy/internal/processor"
 	"github.com/matt-gp/otel-lgtm-proxy/internal/util/proto"
@@ -21,6 +20,8 @@ import (
 	resourcepb "go.opentelemetry.io/proto/otlp/resource/v1"
 	tracepb "go.opentelemetry.io/proto/otlp/trace/v1"
 )
+
+var signalTypeAttrKey = "signal.type"
 
 // Handlers contains the dependencies needed for all OTLP signal handlers.
 type Handlers struct {
@@ -49,7 +50,7 @@ func New(
 	logsProcessor, err := processor.New(
 		config,
 		&config.Logs,
-		attribute.String(otel.SignalTypeAttrKey, "logs"),
+		attribute.String(signalTypeAttrKey, "logs"),
 		logsClient,
 		logger,
 		meter,
@@ -72,7 +73,7 @@ func New(
 	metricsProcessor, err := processor.New(
 		config,
 		&config.Metrics,
-		attribute.String(otel.SignalTypeAttrKey, "metrics"),
+		attribute.String(signalTypeAttrKey, "metrics"),
 		metricsClient,
 		logger,
 		meter,
@@ -95,7 +96,7 @@ func New(
 	tracesProcessor, err := processor.New(
 		config,
 		&config.Traces,
-		attribute.String(otel.SignalTypeAttrKey, "traces"),
+		attribute.String(signalTypeAttrKey, "traces"),
 		tracesClient,
 		logger,
 		meter,
