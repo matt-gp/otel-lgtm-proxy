@@ -4,7 +4,7 @@ package handler
 import (
 	"net/http"
 
-	"github.com/matt-gp/otel-lgtm-proxy/internal/logger"
+	"github.com/matt-gp/core/logger"
 )
 
 // Health handles incoming health check requests.

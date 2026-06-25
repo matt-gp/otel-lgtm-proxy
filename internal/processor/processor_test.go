@@ -8,8 +8,8 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/matt-gp/core/otel"
 	"github.com/matt-gp/otel-lgtm-proxy/internal/config"
-	"github.com/matt-gp/otel-lgtm-proxy/internal/otel"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel/attribute"

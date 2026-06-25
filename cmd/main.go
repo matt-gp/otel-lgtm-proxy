@@ -11,10 +11,10 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/matt-gp/core/logger"
+	"github.com/matt-gp/core/otel"
 	"github.com/matt-gp/otel-lgtm-proxy/internal/config"
 	"github.com/matt-gp/otel-lgtm-proxy/internal/handler"
-	"github.com/matt-gp/otel-lgtm-proxy/internal/logger"
-	"github.com/matt-gp/otel-lgtm-proxy/internal/otel"
 	"github.com/matt-gp/otel-lgtm-proxy/internal/util/cert"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/log"

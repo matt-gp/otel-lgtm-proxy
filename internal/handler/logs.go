@@ -4,7 +4,7 @@ package handler
 import (
 	"net/http"
 
-	"github.com/matt-gp/otel-lgtm-proxy/internal/logger"
+	"github.com/matt-gp/core/logger"
 	"github.com/matt-gp/otel-lgtm-proxy/internal/util/proto"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
