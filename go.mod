@@ -26,7 +26,7 @@ require (
 
 require (
 	github.com/matt-gp/core v0.0.0-20260625181938-882475fbdaf3
-	golang.org/x/sync v0.21.0
+	golang.org/x/sync v0.22.0
 )
 
 require go.opentelemetry.io/contrib/processors/minsev v0.16.1 // indirect
