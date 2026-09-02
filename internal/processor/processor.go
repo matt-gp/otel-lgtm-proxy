@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"slices"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/matt-gp/core/logger"
@@ -140,7 +141,24 @@ func (p *Processor[T]) Partition(ctx context.Context, resources []T) map[string]
 			continue
 		}
 
-		tenantMap[tenant] = append(tenantMap[tenant], resourceData)
+		// If a label separator is configured, split the tenant string and add the
+		// resource to each tenant in the map. Segments are trimmed, and blank or
+		// repeated segments are skipped so a resource is never sent to the same
+		// tenant twice.
+		if sep := p.config.Tenant.LabelSeparator; sep != "" {
+			seen := make(map[string]bool)
+			for t := range strings.SplitSeq(tenant, sep) {
+				t = strings.TrimSpace(t)
+				if t == "" || seen[t] {
+					continue
+				}
+
+				seen[t] = true
+				tenantMap[t] = append(tenantMap[t], resourceData)
+			}
+		} else {
+			tenantMap[tenant] = append(tenantMap[tenant], resourceData)
+		}
 	}
 
 	return tenantMap
