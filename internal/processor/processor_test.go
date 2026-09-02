@@ -478,6 +478,220 @@ func TestPartition(t *testing.T) {
 				"shared": 2,
 			},
 		},
+		{
+			name: "no separator configured treats tenant as a single value",
+			resources: []*logpb.ResourceLogs{
+				{
+					Resource: &resourcepb.Resource{
+						Attributes: []*commonpb.KeyValue{
+							{Key: "tenant.id", Value: &commonpb.AnyValue{Value: &commonpb.AnyValue_StringValue{StringValue: "tenant-a|tenant-b"}}},
+						},
+					},
+				},
+			},
+			config: &config.Config{
+				Tenant: config.Tenant{
+					Label:          "tenant.id",
+					LabelSeparator: "",
+					Default:        "default",
+				},
+			},
+			expectedTenants: map[string]int{
+				"tenant-a|tenant-b": 1,
+			},
+		},
+		{
+			name: "separator fans a resource out to each tenant",
+			resources: []*logpb.ResourceLogs{
+				{
+					Resource: &resourcepb.Resource{
+						Attributes: []*commonpb.KeyValue{
+							{Key: "tenant.id", Value: &commonpb.AnyValue{Value: &commonpb.AnyValue_StringValue{StringValue: "tenant-a|tenant-b|tenant-c"}}},
+						},
+					},
+				},
+			},
+			config: &config.Config{
+				Tenant: config.Tenant{
+					Label:          "tenant.id",
+					LabelSeparator: "|",
+					Default:        "default",
+				},
+			},
+			expectedTenants: map[string]int{
+				"tenant-a": 1,
+				"tenant-b": 1,
+				"tenant-c": 1,
+			},
+		},
+		{
+			name: "separator merges fanned out resources with single tenant resources",
+			resources: []*logpb.ResourceLogs{
+				{
+					Resource: &resourcepb.Resource{
+						Attributes: []*commonpb.KeyValue{
+							{Key: "tenant.id", Value: &commonpb.AnyValue{Value: &commonpb.AnyValue_StringValue{StringValue: "tenant-a,tenant-b"}}},
+						},
+					},
+				},
+				{
+					Resource: &resourcepb.Resource{
+						Attributes: []*commonpb.KeyValue{
+							{Key: "tenant.id", Value: &commonpb.AnyValue{Value: &commonpb.AnyValue_StringValue{StringValue: "tenant-a"}}},
+						},
+					},
+				},
+			},
+			config: &config.Config{
+				Tenant: config.Tenant{
+					Label:          "tenant.id",
+					LabelSeparator: ",",
+					Default:        "default",
+				},
+			},
+			expectedTenants: map[string]int{
+				"tenant-a": 2,
+				"tenant-b": 1,
+			},
+		},
+		{
+			name: "separator trims whitespace around tenants",
+			resources: []*logpb.ResourceLogs{
+				{
+					Resource: &resourcepb.Resource{
+						Attributes: []*commonpb.KeyValue{
+							{Key: "tenant.id", Value: &commonpb.AnyValue{Value: &commonpb.AnyValue_StringValue{StringValue: " tenant-a , tenant-b "}}},
+						},
+					},
+				},
+			},
+			config: &config.Config{
+				Tenant: config.Tenant{
+					Label:          "tenant.id",
+					LabelSeparator: ",",
+					Default:        "default",
+				},
+			},
+			expectedTenants: map[string]int{
+				"tenant-a": 1,
+				"tenant-b": 1,
+			},
+		},
+		{
+			name: "separator skips blank and whitespace only segments",
+			resources: []*logpb.ResourceLogs{
+				{
+					Resource: &resourcepb.Resource{
+						Attributes: []*commonpb.KeyValue{
+							{Key: "tenant.id", Value: &commonpb.AnyValue{Value: &commonpb.AnyValue_StringValue{StringValue: "tenant-a,,   ,tenant-b,"}}},
+						},
+					},
+				},
+			},
+			config: &config.Config{
+				Tenant: config.Tenant{
+					Label:          "tenant.id",
+					LabelSeparator: ",",
+					Default:        "default",
+				},
+			},
+			expectedTenants: map[string]int{
+				"tenant-a": 1,
+				"tenant-b": 1,
+			},
+		},
+		{
+			name: "separator deduplicates repeated tenants within one resource",
+			resources: []*logpb.ResourceLogs{
+				{
+					Resource: &resourcepb.Resource{
+						Attributes: []*commonpb.KeyValue{
+							{Key: "tenant.id", Value: &commonpb.AnyValue{Value: &commonpb.AnyValue_StringValue{StringValue: "tenant-a,tenant-a, tenant-a ,tenant-b"}}},
+						},
+					},
+				},
+			},
+			config: &config.Config{
+				Tenant: config.Tenant{
+					Label:          "tenant.id",
+					LabelSeparator: ",",
+					Default:        "default",
+				},
+			},
+			expectedTenants: map[string]int{
+				"tenant-a": 1,
+				"tenant-b": 1,
+			},
+		},
+		{
+			name: "separator applies to tenants found via fallback labels",
+			resources: []*logpb.ResourceLogs{
+				{
+					Resource: &resourcepb.Resource{
+						Attributes: []*commonpb.KeyValue{
+							{Key: "tenantId", Value: &commonpb.AnyValue{Value: &commonpb.AnyValue_StringValue{StringValue: "tenant-a,tenant-b"}}},
+						},
+					},
+				},
+			},
+			config: &config.Config{
+				Tenant: config.Tenant{
+					Label:          "tenant.id",
+					Labels:         []string{"tenantId"},
+					LabelSeparator: ",",
+					Default:        "default",
+				},
+			},
+			expectedTenants: map[string]int{
+				"tenant-a": 1,
+				"tenant-b": 1,
+			},
+		},
+		{
+			name: "separator leaves a single tenant untouched",
+			resources: []*logpb.ResourceLogs{
+				{
+					Resource: &resourcepb.Resource{
+						Attributes: []*commonpb.KeyValue{
+							{Key: "tenant.id", Value: &commonpb.AnyValue{Value: &commonpb.AnyValue_StringValue{StringValue: "tenant-a"}}},
+						},
+					},
+				},
+			},
+			config: &config.Config{
+				Tenant: config.Tenant{
+					Label:          "tenant.id",
+					LabelSeparator: ",",
+					Default:        "default",
+				},
+			},
+			expectedTenants: map[string]int{
+				"tenant-a": 1,
+			},
+		},
+		{
+			name: "separator applies to the default tenant",
+			resources: []*logpb.ResourceLogs{
+				{
+					Resource: &resourcepb.Resource{
+						Attributes: []*commonpb.KeyValue{
+							{Key: "service.name", Value: &commonpb.AnyValue{Value: &commonpb.AnyValue_StringValue{StringValue: "service-1"}}},
+						},
+					},
+				},
+			},
+			config: &config.Config{
+				Tenant: config.Tenant{
+					Label:          "tenant.id",
+					LabelSeparator: ",",
+					Default:        "shared-a,shared-b",
+				},
+			},
+			expectedTenants: map[string]int{
+				"shared-a": 1,
+				"shared-b": 1,
+			},
+		},
 	}
 
 	for _, tt := range tests {

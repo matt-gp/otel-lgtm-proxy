@@ -45,11 +45,12 @@ type TLSConfig struct {
 
 // Tenant represents the configuration for a tenant.
 type Tenant struct {
-	Label   string   `env:"LABEL"   envDefault:"tenant.id"`
-	Labels  []string `env:"LABELS"  envDefault:""`
-	Format  string   `env:"FORMAT"  envDefault:"%s"`
-	Header  string   `env:"HEADER"  envDefault:"X-Scope-OrgID"`
-	Default string   `env:"DEFAULT" envDefault:"default"`
+	Label          string   `env:"LABEL"           envDefault:"tenant.id"`
+	Labels         []string `env:"LABELS"          envDefault:""`
+	LabelSeparator string   `env:"LABEL_SEPARATOR" envDefault:""`
+	Format         string   `env:"FORMAT"          envDefault:"%s"`
+	Header         string   `env:"HEADER"          envDefault:"X-Scope-OrgID"`
+	Default        string   `env:"DEFAULT"         envDefault:"default"`
 }
 
 // Parse parses the configuration from environment variables
