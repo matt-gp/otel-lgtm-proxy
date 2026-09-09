@@ -26,7 +26,7 @@ require (
 
 require (
 	github.com/matt-gp/core v0.0.0-20260625181938-882475fbdaf3
-	golang.org/x/sync v0.22.0
+	golang.org/x/sync v0.23.0
 )
 
 require (
