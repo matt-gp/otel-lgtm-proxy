@@ -93,6 +93,9 @@ services:
       - OTEL_METRICS_EXPORTER=otlp
       - OTEL_TRACES_EXPORTER=otlp
       - OTEL_LOGS_EXPORTER=otlp
+      # Split a resolved tenant value on "," so one resource can fan out to
+      # several tenants. See the gen-shared-* services below.
+      - TENANT_LABEL_SEPARATOR=,
       # Note: No tenant.id set here to test default tenant logic
     depends_on:
       otel-collector:
@@ -387,6 +390,64 @@ services:
       - --otlp-insecure
       - '--otlp-attributes=tenant.id="tenant-b"'
       - --service=backend-api
+      - --duration=Inf
+      - --rate=2
+    restart: unless-stopped
+    depends_on:
+      otel-collector:
+        condition: service_healthy
+
+  # ── shared / platform-service ────────────────────────────────────────────────
+  # Exercises TENANT_LABEL_SEPARATOR: a single resource carries both tenants in
+  # one attribute, so the proxy fans it out to tenant-a and tenant-b. The value
+  # is deliberately written with a space after the comma to confirm segments are
+  # trimmed. In Grafana this service appears under both the Tenant A and Tenant B
+  # datasources, while the forwarded payload keeps the original "tenant-a, tenant-b"
+  # attribute so the sharing is visible rather than looking like a misroute.
+  gen-shared-platform-service-traces:
+    build:
+      context: ./test
+      dockerfile: Dockerfile.telemetrygen
+    command:
+      - traces
+      - --otlp-endpoint=otel-collector:4317
+      - --otlp-insecure
+      - '--otlp-attributes=tenant.id="tenant-a, tenant-b"'
+      - --service=platform-service
+      - --duration=Inf
+      - --rate=4
+    restart: unless-stopped
+    depends_on:
+      otel-collector:
+        condition: service_healthy
+
+  gen-shared-platform-service-logs:
+    build:
+      context: ./test
+      dockerfile: Dockerfile.telemetrygen
+    command:
+      - logs
+      - --otlp-endpoint=otel-collector:4317
+      - --otlp-insecure
+      - '--otlp-attributes=tenant.id="tenant-a, tenant-b"'
+      - --service=platform-service
+      - --duration=Inf
+      - --rate=6
+    restart: unless-stopped
+    depends_on:
+      otel-collector:
+        condition: service_healthy
+
+  gen-shared-platform-service-metrics:
+    build:
+      context: ./test
+      dockerfile: Dockerfile.telemetrygen
+    command:
+      - metrics
+      - --otlp-endpoint=otel-collector:4317
+      - --otlp-insecure
+      - '--otlp-attributes=tenant.id="tenant-a, tenant-b"'
+      - --service=platform-service
       - --duration=Inf
       - --rate=2
     restart: unless-stopped

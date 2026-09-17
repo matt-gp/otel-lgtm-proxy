@@ -135,6 +135,7 @@ export OLP_TRACES_ADDRESS=http://localhost:3201/v1/traces
 # Tenant configuration
 export TENANT_LABEL=tenant.id           # Primary tenant attribute (checked first)
 export TENANT_LABELS=tenantId,tenant_id # Fallback tenant attributes
+export TENANT_LABEL_SEPARATOR=,         # Split value into multiple tenants (empty = single tenant)
 export TENANT_HEADER=X-Scope-OrgID      # Header to add to backend requests
 export TENANT_DEFAULT=default           # Default tenant if not found
 
@@ -428,6 +429,7 @@ Available TLS options for each:
 |---------------------|---------|-------------|
 | `TENANT_LABEL` | `tenant.id` | Primary resource attribute key containing tenant ID (checked first) |
 | `TENANT_LABELS` | `""` | Comma-separated list of fallback attribute keys to check if primary is not found |
+| `TENANT_LABEL_SEPARATOR` | `""` | Separator used to split the resolved tenant value into multiple tenants. Empty (default) treats the value as a single tenant |
 | `TENANT_FORMAT` | `%s` | Format string for tenant ID (e.g., `%s-prod`) |
 | `TENANT_HEADER` | `X-Scope-OrgID` | HTTP header for tenant ID when forwarding |
 | `TENANT_DEFAULT` | `default` | Default tenant when none specified |
@@ -436,11 +438,13 @@ Available TLS options for each:
 1. First checks the dedicated label specified by `TENANT_LABEL` (e.g., `tenant.id`)
 2. If not found, checks each label in `TENANT_LABELS` in order (e.g., `tenantId`, `tenant_id`)
 3. If still not found, uses the default specified by `TENANT_DEFAULT`
+4. If `TENANT_LABEL_SEPARATOR` is set, the resolved value is split into multiple tenants
 
 **Example Configuration:**
 ```bash
 export TENANT_LABEL=tenant.id                    # Primary tenant attribute (checked first)
 export TENANT_LABELS=tenantId,tenant_id,org.id   # Fallback attributes (checked in order)
+export TENANT_LABEL_SEPARATOR=,                  # Split the resolved value into multiple tenants
 export TENANT_DEFAULT=default                     # Used if no tenant attribute found
 ```
 
@@ -499,6 +503,36 @@ TENANT_DEFAULT=shared
 # Scenario 4: Resource has no tenant attributes
 # → Uses "shared" (TENANT_DEFAULT)
 ```
+
+### Multi-Tenant Fan-Out
+
+By default the resolved tenant value is treated as a single tenant. Setting `TENANT_LABEL_SEPARATOR` splits it, so one resource can be forwarded to several tenants — one request per tenant, each with its own `TENANT_HEADER` value.
+
+```bash
+TENANT_LABEL=tenant.id
+TENANT_LABEL_SEPARATOR=,
+```
+
+```protobuf
+Resource {
+  attributes: [
+    {
+      key: "tenant.id"
+      value: "team-a,team-b"   // Forwarded to both team-a and team-b
+    }
+  ]
+}
+```
+
+Splitting applies to whichever value resolution produced, including one found via `TENANT_LABELS` or supplied by `TENANT_DEFAULT`. When handling the split segments the proxy:
+
+- **Trims surrounding whitespace**, so `"team-a, team-b"` resolves to `team-a` and `team-b` rather than `team-a` and `" team-b"`
+- **Skips blank segments**, so `"team-a,,team-b"` yields two tenants, not three
+- **Deduplicates**, so `"team-a,team-a"` is sent to `team-a` once rather than duplicating the records
+
+The original attribute value is left untouched on the forwarded payload. A resource sent to `team-a` still carries `tenant.id="team-a,team-b"`, which makes it clear the data was deliberately shared with several tenants rather than misrouted.
+
+Note that fan-out multiplies outbound requests: a value naming three tenants produces three requests per signal, and `otel_lgtm_proxy_records_total` counts each record once per tenant it is forwarded to.
 
 ### Partitioning Functions
 

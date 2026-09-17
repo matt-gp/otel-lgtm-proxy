@@ -26,6 +26,9 @@ func TestParse_Defaults(t *testing.T) {
 	if len(cfg.Tenant.Labels) != 0 {
 		t.Errorf("Tenant.Labels = %v, want empty slice", cfg.Tenant.Labels)
 	}
+	if cfg.Tenant.LabelSeparator != "" {
+		t.Errorf("Tenant.LabelSeparator = %v, want empty string", cfg.Tenant.LabelSeparator)
+	}
 	if cfg.Tenant.Format != "%s" {
 		t.Errorf("Tenant.Format = %v, want %%s", cfg.Tenant.Format)
 	}
@@ -73,6 +76,7 @@ func TestParse_AllValues(t *testing.T) {
 
 	t.Setenv("TENANT_LABEL", "app.tenant")
 	t.Setenv("TENANT_LABELS", "tenantId,namespace,org.id")
+	t.Setenv("TENANT_LABEL_SEPARATOR", ",")
 	t.Setenv("TENANT_FORMAT", "%s-staging")
 	t.Setenv("TENANT_HEADER", "X-Tenant")
 	t.Setenv("TENANT_DEFAULT", "public")
@@ -144,6 +148,9 @@ func TestParse_AllValues(t *testing.T) {
 		if cfg.Tenant.Labels[i] != label {
 			t.Errorf("Tenant.Labels[%d] = %v, want %v", i, cfg.Tenant.Labels[i], label)
 		}
+	}
+	if cfg.Tenant.LabelSeparator != "," {
+		t.Errorf("Tenant.LabelSeparator = %v, want ,", cfg.Tenant.LabelSeparator)
 	}
 	if cfg.Tenant.Format != "%s-staging" {
 		t.Errorf("Tenant.Format = %v, want %%s-staging", cfg.Tenant.Format)
