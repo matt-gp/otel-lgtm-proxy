@@ -4,7 +4,6 @@ package main
 import (
 	"context"
 	"crypto/tls"
-	"crypto/x509"
 	"errors"
 	"net/http"
 	"os"
@@ -107,11 +106,6 @@ func main() {
 	// register the traces handler.
 	h.Register(ctx, "POST /v1/traces", h.Traces)
 
-	// Initialize TLS configuration
-	tlsConfig := &tls.Config{
-		MinVersion: tls.VersionTLS13,
-	}
-
 	// Add attributes for TLS configuration
 	tlsEnabled := cert.TLSEnabled(&cfg.HTTP.TLS)
 	httpAttributes := []attribute.KeyValue{
@@ -119,30 +113,18 @@ func main() {
 		attribute.Bool(httpTLSEnabledAttrKey, tlsEnabled),
 	}
 
+	// Initialize TLS configuration
+	tlsConfig := &tls.Config{ MinVersion: tls.VersionTLS13 }
+
 	// Load TLS certificates
 	if tlsEnabled {
-		certPair, err := tls.LoadX509KeyPair(cfg.HTTP.TLS.CertFile, cfg.HTTP.TLS.KeyFile)
+		tlsConfig, err = cert.CreateTLSConfig(&cfg.HTTP)
 		if err != nil {
-			logger.Error(ctx, "unable to read certificate or key file",
+			logger.Error(ctx, "failed to create TLS config",
 				append(httpAttributes, attribute.String(errAttrKey, err.Error()))...,
 			)
 			os.Exit(1)
 		}
-
-		caPool := x509.NewCertPool()
-		caCert, err := os.ReadFile(cfg.HTTP.TLS.CAFile)
-		if err != nil {
-			logger.Error(ctx, "unable to read CA file",
-				append(httpAttributes, attribute.String(errAttrKey, err.Error()))...,
-			)
-			os.Exit(1)
-		}
-
-		caPool.AppendCertsFromPEM(caCert)
-
-		tlsConfig.Certificates = []tls.Certificate{certPair}
-		tlsConfig.RootCAs = caPool
-		tlsConfig.ClientAuth = cert.StringClientAuthType(cfg.HTTP.TLS.ClientAuthType)
 	}
 
 	// Create new HTTP server with the provided TLS configuration.
